@@ -6,7 +6,7 @@ const { connectRedis } = require('./config/redis');
 
 const PORT = process.env.PORT || 3000;
 
-// Connexion + synchronisation
+// Connexion + synchronisation base de données
 sequelize.authenticate()
   .then(async () => {
     console.log('✅ Connexion PostgreSQL réussie !');
