@@ -13,6 +13,7 @@ const uploadRoutes = require('./routes/upload.routes');
 const quizRoutes = require('./routes/quiz.routes');
 const satRoutes = require('./routes/sat.routes');
 const gamificationRoutes = require('./routes/gamification.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/quiz', quizRoutes);
 app.use('/api/v1/sat', satRoutes);
 app.use('/api/v1/gamification', gamificationRoutes);
+app.use('/api/v1/chat', chatRoutes);
 
 // Route de test
 app.get('/', (req, res) => {

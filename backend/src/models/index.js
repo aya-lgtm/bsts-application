@@ -13,6 +13,9 @@ const QuizResult = require('./QuizResult');
 const SATQuestion = require('./SATQuestion');
 const SATSession = require('./SATSession');
 const Gamification = require('./Gamification');
+const Conversation = require('./Conversation');
+const Message = require('./Message');
+const ConversationMember = require('./ConversationMember');
 
 const syncDatabase = async () => {
   try {
@@ -40,4 +43,7 @@ module.exports = {
   SATQuestion,
   SATSession,
   Gamification,
+  Conversation,
+  Message,
+  ConversationMember,
 };
