@@ -2,8 +2,12 @@ const sequelize = require('../config/database');
 const User = require('./User');
 const RefreshToken = require('./RefreshToken');
 const Subscription = require('./Subscription');
+const UserProfile = require('./UserProfile');
+const Subject = require('./Subject');
+const Chapter = require('./Chapter');
+const Lesson = require('./Lesson');
+const Progress = require('./Progress');
 
-// Synchroniser tous les modèles avec la base de données
 const syncDatabase = async () => {
   try {
     await sequelize.sync({ alter: true });
@@ -19,4 +23,9 @@ module.exports = {
   User,
   RefreshToken,
   Subscription,
+  UserProfile,
+  Subject,
+  Chapter,
+  Lesson,
+  Progress,
 };

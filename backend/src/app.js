@@ -7,6 +7,7 @@ const swaggerSpec = require('./config/swagger');
 
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
+const courseRoutes = require('./routes/course.routes');
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // Routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/courses', courseRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
