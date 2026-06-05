@@ -11,6 +11,7 @@ const userRoutes = require('./routes/user.routes');
 const courseRoutes = require('./routes/course.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const quizRoutes = require('./routes/quiz.routes');
+const satRoutes = require('./routes/sat.routes');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/quiz', quizRoutes);
+app.use('/api/v1/sat', satRoutes);
 
 // Route de test
 app.get('/', (req, res) => {

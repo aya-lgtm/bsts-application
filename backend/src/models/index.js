@@ -10,6 +10,9 @@ const Progress = require('./Progress');
 const Quiz = require('./Quiz');
 const Question = require('./Question');
 const QuizResult = require('./QuizResult');
+const SATQuestion = require('./SATQuestion');
+const SATSession = require('./SATSession');
+const Gamification = require('./Gamification');
 
 const syncDatabase = async () => {
   try {
@@ -34,4 +37,7 @@ module.exports = {
   Quiz,
   Question,
   QuizResult,
+  SATQuestion,
+  SATSession,
+  Gamification,
 };
