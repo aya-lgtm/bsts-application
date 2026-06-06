@@ -9,6 +9,13 @@ const register = async (req, res) => {
   try {
     const { nom, prenom, email, password, role } = req.body;
 
+    // Bloquer la création de PROFESSOR/ADMIN via l'API publique
+    if (role === 'PROFESSOR' || role === 'ADMIN') {
+      return res.status(403).json({
+        message: 'Ce rôle ne peut pas être créé via l\'inscription publique. Contactez l\'administrateur BSTS.',
+      });
+    }
+
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'Email déjà utilisé' });
@@ -49,6 +56,7 @@ const register = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+
 
 // CONNEXION
 const login = async (req, res) => {
