@@ -14,8 +14,12 @@ const quizRoutes = require('./routes/quiz.routes');
 const satRoutes = require('./routes/sat.routes');
 const gamificationRoutes = require('./routes/gamification.routes');
 const chatRoutes = require('./routes/chat.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
 const app = express();
+
+// Webhook Stripe doit être avant express.json()
+app.use('/api/v1/payment/webhook', express.raw({ type: 'application/json' }));
 
 // Middlewares
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -42,6 +46,7 @@ app.use('/api/v1/quiz', quizRoutes);
 app.use('/api/v1/sat', satRoutes);
 app.use('/api/v1/gamification', gamificationRoutes);
 app.use('/api/v1/chat', chatRoutes);
+app.use('/api/v1/payment', paymentRoutes);
 
 // Route de test
 app.get('/', (req, res) => {

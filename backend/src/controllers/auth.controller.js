@@ -1,22 +1,21 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { User, RefreshToken } = require('../models');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt.utils');
+const { sendResetPasswordEmail } = require('../config/mailer');
 
 // INSCRIPTION
 const register = async (req, res) => {
   try {
     const { nom, prenom, email, password, role } = req.body;
 
-    // Vérifier si l'email existe déjà
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'Email déjà utilisé' });
     }
 
-    // Hacher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Créer l'utilisateur
     const user = await User.create({
       nom,
       prenom,
@@ -25,11 +24,9 @@ const register = async (req, res) => {
       role: role || 'STUDENT',
     });
 
-    // Générer les tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Sauvegarder le refresh token
     await RefreshToken.create({
       token: refreshToken,
       userId: user.id,
@@ -58,23 +55,19 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Vérifier si l'utilisateur existe
     const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
     }
 
-    // Vérifier le mot de passe
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
     }
 
-    // Générer les tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Sauvegarder le refresh token
     await RefreshToken.create({
       token: refreshToken,
       userId: user.id,
@@ -102,9 +95,7 @@ const login = async (req, res) => {
 const logout = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-
     await RefreshToken.destroy({ where: { token: refreshToken } });
-
     return res.status(200).json({ message: 'Déconnexion réussie !' });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
@@ -115,24 +106,72 @@ const logout = async (req, res) => {
 const refreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-
-    // Vérifier le refresh token
     const decoded = verifyRefreshToken(refreshToken);
-
-    // Vérifier si le token existe en base
     const tokenInDb = await RefreshToken.findOne({ where: { token: refreshToken, isRevoked: false } });
     if (!tokenInDb) {
       return res.status(401).json({ message: 'Refresh token invalide' });
     }
-
-    // Générer un nouveau access token
     const user = await User.findByPk(decoded.id);
     const newAccessToken = generateAccessToken(user);
-
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
     return res.status(401).json({ message: 'Refresh token expiré ou invalide' });
   }
 };
 
-module.exports = { register, login, logout, refreshToken };
+// MOT DE PASSE OUBLIÉ
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ message: 'Email non trouvé' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
+
+    await user.update({
+      resetPasswordToken: resetToken,
+      resetPasswordExpires: resetExpires,
+    });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    await sendResetPasswordEmail(email, resetUrl);
+
+    return res.status(200).json({ message: 'Email de réinitialisation envoyé !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// RÉINITIALISER LE MOT DE PASSE
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    const user = await User.findOne({ where: { resetPasswordToken: token } });
+    if (!user) {
+      return res.status(400).json({ message: 'Token invalide' });
+    }
+
+    if (new Date() > user.resetPasswordExpires) {
+      return res.status(400).json({ message: 'Token expiré' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await user.update({
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+    });
+
+    return res.status(200).json({ message: 'Mot de passe réinitialisé avec succès !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+module.exports = { register, login, logout, refreshToken, forgotPassword, resetPassword };
