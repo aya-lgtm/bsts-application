@@ -1,4 +1,6 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY 
+  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+  : null;
 const { Payment, PromoCode, Subscription, User } = require('../models');
 
 // Prix des abonnements
