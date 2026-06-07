@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
+const { Sentry, initSentry } = require('./config/sentry');
 
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
@@ -16,7 +17,13 @@ const gamificationRoutes = require('./routes/gamification.routes');
 const chatRoutes = require('./routes/chat.routes');
 const paymentRoutes = require('./routes/payment.routes');
 
+// Initialiser Sentry
+initSentry();
+
 const app = express();
+
+// Sentry request handler (doit être en premier)
+app.use(Sentry.expressErrorHandler());
 
 // Webhook Stripe doit être avant express.json()
 app.use('/api/v1/payment/webhook', express.raw({ type: 'application/json' }));
@@ -52,5 +59,8 @@ app.use('/api/v1/payment', paymentRoutes);
 app.get('/', (req, res) => {
   res.json({ message: 'BSTS API is running 🚀' });
 });
+
+// Sentry error handler (doit être après les routes)
+app.use(Sentry.expressErrorHandler());
 
 module.exports = app;

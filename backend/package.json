@@ -3,28 +3,31 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-"scripts": {
-  "start": "node src/index.js",
-  "dev": "nodemon src/index.js",
-  "lint": "eslint .",
-  "format": "prettier --write .",
-  "test": "jest --forceExit --detectOpenHandles"
-},
-"jest": {
-  "testEnvironment": "node",
-  "testTimeout": 30000,
-  "setupFiles": ["dotenv/config"],
-  "testEnvironmentOptions": {
-    "env": {
-      "DOTENV_CONFIG_PATH": ".env.test"
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "jest --forceExit --detectOpenHandles"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "setupFiles": [
+      "dotenv/config"
+    ],
+    "testEnvironmentOptions": {
+      "env": {
+        "DOTENV_CONFIG_PATH": ".env.test"
+      }
     }
-  }
-},
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@sentry/node": "^10.56.0",
     "aws-sdk": "^2.1693.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
