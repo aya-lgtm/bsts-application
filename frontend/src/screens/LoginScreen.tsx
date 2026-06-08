@@ -10,22 +10,49 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
+import { loginUser } from '../services/auth.service'
+const icons = {
+  email: require('../assets/icon-email.png'),
+  lock: require('../assets/icon-lock.png'),
+  eye: require('../assets/icon-eye.png'),
+  eyeOff: require('../assets/icon-eye-off.png'),
+}
 
-const { width, height } = Dimensions.get('window')
+const { width } = Dimensions.get('window')
 
-export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
+export default function LoginScreen({ onFinish, onRegister, onForgot  }: { onFinish: (role: string) => void, onRegister: () => void, onForgot: () => void } ) {
   const insets = useSafeAreaInsets()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setError('Please complete all required fields')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const { user } = await loginUser(email, password)
+      onFinish(user.role)
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Incorrect email or password')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#F5F3EE' }}
+      style={{ flex: 1, backgroundColor: '#FFFFFF' }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
@@ -33,10 +60,8 @@ export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Tout le contenu */}
         <View style={[styles.content, { paddingTop: insets.top + 20 }]}>
 
-          {/* Logo */}
           <Image
             source={require('../assets/logo1.png')}
             style={styles.logo}
@@ -46,14 +71,12 @@ export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
           <Text style={styles.brandSub}>SCIENCE & TECH SCHOOL</Text>
           <View style={styles.goldLine} />
 
-          {/* Welcome */}
           <Text style={styles.welcomeTitle}>Welcome</Text>
           <Text style={styles.welcomeGold}>Back</Text>
           <Text style={styles.welcomeSub}>Login to continue your journey</Text>
 
-          {/* Email */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputIcon}>✉️</Text>
+            <Image source={icons.email} style={styles.inputIcon} resizeMode="contain" />
             <TextInput
               style={styles.input}
               placeholder="Email or Username"
@@ -65,9 +88,8 @@ export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
             />
           </View>
 
-          {/* Password */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputIcon}>🔒</Text>
+            <Image source={icons.lock} style={styles.inputIcon} resizeMode="contain" />
             <TextInput
               style={styles.input}
               placeholder="Password"
@@ -77,11 +99,14 @@ export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
               secureTextEntry={!showPassword}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+              <Image
+  source={showPassword ? icons.eyeOff : icons.eye}
+  style={styles.eyeIcon}
+  resizeMode="contain"
+/>
             </TouchableOpacity>
           </View>
 
-          {/* Remember me + Forgot Password */}
           <View style={styles.rememberRow}>
             <TouchableOpacity
               style={styles.rememberLeft}
@@ -92,48 +117,58 @@ export default function LoginScreen({ onFinish }: { onFinish: () => void }) {
               </View>
               <Text style={styles.rememberText}>Remember me</Text>
             </TouchableOpacity>
-            <TouchableOpacity>
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
+            <TouchableOpacity onPress={onForgot}>
+  <Text style={styles.forgotText}>Forgot Password?</Text>
+</TouchableOpacity>
           </View>
 
-          {/* Sign In */}
-          <TouchableOpacity style={styles.signInBtn} onPress={onFinish}>
-            <Text style={styles.signInText}>Sign In</Text>
-            <Text style={styles.signInArrow}>→</Text>
+          {/* Bouton Sign In connecté au backend */}
+          <TouchableOpacity
+            style={[styles.signInBtn, loading && { opacity: 0.7 }]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.signInText}>Sign In</Text>
+                <Text style={styles.signInArrow}>→</Text>
+              </>
+            )}
           </TouchableOpacity>
+
+          {/* Message d'erreur */}
+          {error !== '' && (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
 
         </View>
 
-        {/* Formes courbées — dans le ScrollView, collées après le contenu */}
         <View style={styles.bottomShapes}>
+          <Svg
+            width={width}
+            height={220}
+            viewBox={`0 0 ${width} 160`}
+            style={StyleSheet.absoluteFill}
+          >
+            <Path
+              d={`M0,80 Q${width * 0.2},10 ${width * 0.5},50 Q${width * 0.75},90 ${width},30 L${width},160 L0,160 Z`}
+              fill="#0D6B5E"
+            />
+          </Svg>
 
-         {/* Vague verte */}
-        <Svg
-          width={width}
-          height={220}
-          viewBox={`0 0 ${width} 160`}
-          style={StyleSheet.absoluteFill}
-        >
-          <Path
-            d={`M0,80 Q${width * 0.2},10 ${width * 0.5},50 Q${width * 0.75},90 ${width},30 L${width},160 L0,160 Z`}
-            fill="#0D6B5E"
-          />
-        </Svg>
-
-          {/* Create Account */}
           <View style={[styles.createAccountRow, { paddingBottom: insets.bottom + 8 }]}>
             <View style={styles.createAccountIcon}>
               <Text style={{ fontSize: 18 }}>👤</Text>
             </View>
             <View>
               <Text style={styles.noAccountText}>Don't have an account?</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => onRegister()}>
                 <Text style={styles.createAccountText}>Create Account →</Text>
               </TouchableOpacity>
             </View>
           </View>
-
         </View>
 
       </ScrollView>
@@ -145,7 +180,7 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     paddingHorizontal: width * 0.07,
-    backgroundColor: '#F5F3EE',
+    backgroundColor: '#FFFFFF',
   },
   logo: {
     width: width * 0.22,
@@ -179,7 +214,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2C2C2A',
     alignSelf: 'center',
-    
   },
   welcomeGold: {
     fontSize: width * 0.09,
@@ -194,7 +228,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 4,
     marginBottom: 24,
-    
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -209,17 +242,21 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   inputIcon: {
-    fontSize: 16,
-    marginRight: 10,
-  },
+  width: 30,
+  height: 30,
+  marginRight: 10,
+  tintColor: '#AAAAAA',   // colorie l'icône en gris comme les placeholders
+},
   input: {
     flex: 1,
     fontSize: width * 0.038,
     color: '#2C2C2A',
   },
   eyeIcon: {
-    fontSize: 16,
-  },
+  width: 40,
+  height: 40,
+  tintColor: '#AAAAAA',
+},
   rememberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -268,7 +305,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     width: '100%',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   signInText: {
     fontSize: width * 0.045,
@@ -280,10 +317,16 @@ const styles = StyleSheet.create({
     fontSize: width * 0.045,
     color: '#FFFFFF',
   },
+  errorText: {
+    color: '#E24B4A',
+    fontSize: width * 0.035,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   bottomShapes: {
     height: 220,
     width: width,
-    backgroundColor: '#F5F3EE',
+    backgroundColor: '#FFFFFF',
   },
   createAccountRow: {
     position: 'absolute',
