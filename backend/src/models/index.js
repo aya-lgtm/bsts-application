@@ -16,6 +16,8 @@ const Gamification = require('./Gamification');
 const Conversation = require('./Conversation');
 const Message = require('./Message');
 const ConversationMember = require('./ConversationMember');
+const Payment = require('./Payment');
+const PromoCode = require('./PromoCode');
 
 const syncDatabase = async () => {
   try {
@@ -46,4 +48,6 @@ module.exports = {
   Conversation,
   Message,
   ConversationMember,
+  Payment,
+  PromoCode,
 };

@@ -15,6 +15,11 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  username: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+  },
   email: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -31,10 +36,30 @@ const User = sequelize.define('User', {
   },
   isActive: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true,
+    defaultValue: false,
+  },
+  isVerified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
   },
   photo: {
     type: DataTypes.STRING,
+    allowNull: true,
+  },
+  resetPasswordToken: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  resetPasswordExpires: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  otpCode: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  otpExpires: {
+    type: DataTypes.DATE,
     allowNull: true,
   },
 }, {

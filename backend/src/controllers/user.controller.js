@@ -86,4 +86,45 @@ const deleteUser = async (req, res) => {
   }
 };
 
+const bcrypt = require('bcrypt');
+
+// POST créer un utilisateur par l'admin
+const createUserByAdmin = async (req, res) => {
+  try {
+    const { nom, prenom, email, password, role } = req.body;
+
+    const allowedRoles = ['STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'Rôle invalide' });
+    }
+
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email déjà utilisé' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    const user = await User.create({
+      nom,
+      prenom,
+      email,
+      password: hashedPassword,
+      role,
+    });
+
+    return res.status(201).json({
+      message: 'Utilisateur créé avec succès !',
+      user: {
+        id: user.id,
+        nom: user.nom,
+        prenom: user.prenom,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = { getProfile, updateProfile, getAllUsers, getUsersByRole, deleteUser };
