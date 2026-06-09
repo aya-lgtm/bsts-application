@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP } = require('../controllers/auth.controller');
+const { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP } = require('../controllers/auth.controller');
 const { loginLimiter, registerLimiter, forgotPasswordLimiter } = require('../middlewares/rateLimit.middleware');
 
 /**
@@ -201,5 +201,6 @@ router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
  *         description: Mot de passe réinitialisé
  */
 router.post('/reset-password', resetPassword);
+router.post('/verify-reset-otp', verifyResetOTP);
 
 module.exports = router;

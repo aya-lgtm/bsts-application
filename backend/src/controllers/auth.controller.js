@@ -15,14 +15,20 @@ const register = async (req, res) => {
 
     if (role === 'PROFESSOR' || role === 'ADMIN') {
       return res.status(403).json({
-        message: 'Ce rôle ne peut pas être créé via l\'inscription publique.',
+        message: "This role cannot be created via public registration",
       });
     }
 
-    const existingUser = await User.findOne({ where: { email } });
+    // Vérifier si email déjà utilisé par un compte VÉRIFIÉ
+    const existingUser = await User.findOne({ 
+      where: { email, isVerified: true } 
+    });
     if (existingUser) {
-      return res.status(400).json({ message: 'Email déjà utilisé' });
+      return res.status(400).json({ message: 'An account with this email address already exists' });
     }
+
+    // Supprimer les anciens comptes non vérifiés avec ce même email
+    await User.destroy({ where: { email, isVerified: false } });
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const otpCode = generateOTP();
@@ -41,12 +47,12 @@ const register = async (req, res) => {
     await sendOTPEmail(email, otpCode);
 
     return res.status(201).json({
-      message: 'Inscription réussie ! Vérifiez votre email pour activer votre compte.',
+      message: 'Verification code sent! Please check your email.',
       userId: user.id,
       email: user.email,
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -56,15 +62,15 @@ const verifyOTP = async (req, res) => {
 
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.otpCode !== otpCode) {
-      return res.status(400).json({ message: 'Code OTP invalide' });
+      return res.status(400).json({ message: 'Incorrect One-Time Password' });
     }
 
     if (new Date() > user.otpExpires) {
-      return res.status(400).json({ message: 'Code OTP expiré' });
+      return res.status(400).json({ message: 'Expired One-Time Password' });
     }
 
     await user.update({
@@ -84,7 +90,7 @@ const verifyOTP = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: 'Compte vérifié avec succès !',
+      message: 'Account verified successfully!',
       accessToken,
       refreshToken,
       user: {
@@ -96,7 +102,7 @@ const verifyOTP = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -106,11 +112,11 @@ const resendOTP = async (req, res) => {
 
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.isVerified) {
-      return res.status(400).json({ message: 'Compte déjà vérifié' });
+      return res.status(400).json({ message: 'Account already verified' });
     }
 
     const otpCode = generateOTP();
@@ -119,9 +125,9 @@ const resendOTP = async (req, res) => {
     await user.update({ otpCode, otpExpires });
     await sendOTPEmail(user.email, otpCode);
 
-    return res.status(200).json({ message: 'Nouveau code OTP envoyé !' });
+    return res.status(200).json({ message: 'New verification code sent.' });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -131,19 +137,19 @@ const login = async (req, res) => {
 
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
+      return res.status(401).json({ message: 'Incorrect email or password' });
     }
 
     if (!user.isVerified) {
       return res.status(403).json({
-        message: 'Compte non vérifié. Vérifiez votre email.',
+        message: 'Account not verified. Please check your email.',
         userId: user.id,
       });
     }
-
+    
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
+      return res.status(401).json({ message: 'Incorrect email or password' });
     }
 
     const accessToken = generateAccessToken(user);
@@ -156,7 +162,7 @@ const login = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: 'Connexion réussie !',
+      message: 'Login successful!',
       accessToken,
       refreshToken,
       user: {
@@ -168,7 +174,7 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -176,9 +182,9 @@ const logout = async (req, res) => {
   try {
     const { refreshToken } = req.body;
     await RefreshToken.destroy({ where: { token: refreshToken } });
-    return res.status(200).json({ message: 'Déconnexion réussie !' });
+    return res.status(200).json({ message: 'Logout successful!' });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -188,13 +194,13 @@ const refreshToken = async (req, res) => {
     const decoded = verifyRefreshToken(refreshToken);
     const tokenInDb = await RefreshToken.findOne({ where: { token: refreshToken, isRevoked: false } });
     if (!tokenInDb) {
-      return res.status(401).json({ message: 'Refresh token invalide' });
+      return res.status(401).json({ message: 'Invalid refresh token' });
     }
     const user = await User.findByPk(decoded.id);
     const newAccessToken = generateAccessToken(user);
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
-    return res.status(401).json({ message: 'Refresh token expiré ou invalide' });
+    return res.status(401).json({ message: 'Session refresh token expired or invalid' });
   }
 };
 
@@ -212,7 +218,7 @@ const forgotPassword = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     const otpCode = generateOTP();
@@ -226,11 +232,11 @@ const forgotPassword = async (req, res) => {
     await sendOTPEmail(user.email, otpCode);
 
     return res.status(200).json({
-      message: 'Code de réinitialisation envoyé par email !',
+      message: 'Reset code sent via email!',
       userId: user.id,
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
@@ -240,15 +246,15 @@ const resetPassword = async (req, res) => {
 
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.resetPasswordToken !== otpCode) {
-      return res.status(400).json({ message: 'Code OTP invalide' });
+      return res.status(400).json({ message: 'Incorrect One-Time Password' });
     }
 
     if (new Date() > user.resetPasswordExpires) {
-      return res.status(400).json({ message: 'Code OTP expiré' });
+      return res.status(400).json({ message: 'Expired One-Time Password' });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
@@ -259,10 +265,25 @@ const resetPassword = async (req, res) => {
       resetPasswordExpires: null,
     });
 
-    return res.status(200).json({ message: 'Mot de passe réinitialisé avec succès !' });
+    return res.status(200).json({ message: 'Password reset successfully!' });
   } catch (error) {
-    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    return res.status(500).json({ message: 'Internal server erroR', error: error.message });
   }
 };
 
-module.exports = { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP };
+const verifyResetOTP = async (req, res) => {
+  try {
+    const { userId, otpCode } = req.body
+    const user = await User.findByPk(userId)
+    if (!user) return res.status(404).json({ message: 'User not found' })
+    if (user.resetPasswordToken !== otpCode)
+      return res.status(400).json({ message: 'Incorrect One-Time Password' })
+    if (new Date() > user.resetPasswordExpires)
+      return res.status(400).json({ message: 'Expired One-Time Password' })
+    return res.status(200).json({ message: 'Code validated successfully', userId })
+  } catch (error) {
+    return res.status(500).json({ message: 'Internal server error', error: error.message })
+  }
+}
+
+module.exports = { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP };

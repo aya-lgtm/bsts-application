@@ -14,12 +14,13 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
+import { forgotPasswordAPI } from '../services/auth.service'
 
 const { width } = Dimensions.get('window')
 
 export default function ForgotPasswordScreen({ onBack, onSent }: { 
   onBack: () => void
-  onSent: (email: string) => void 
+  onSent: (email: string, userId: string) => void 
 }) {  const insets = useSafeAreaInsets()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
@@ -34,11 +35,10 @@ export default function ForgotPasswordScreen({ onBack, onSent }: {
     setLoading(true)
     setError('')
     try {
-      // TODO: connecter à l'API reset password
-      await new Promise(r => setTimeout(r, 1000))
-      onSent(email)
+      const data = await forgotPasswordAPI(email)
+      onSent(email, data.userId)
     } catch (e: any) {
-      setError('Submission failed. Please try again')
+      setError(e?.response?.data?.message || 'Submission failed. Please try again')
     } finally {
       setLoading(false)
     }

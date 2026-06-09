@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
 import { LinearGradient } from 'expo-linear-gradient'
+import { registerUser } from '../services/auth.service'
 
 const { width, height } = Dimensions.get('window')
 
@@ -150,7 +151,7 @@ export default function RegisterScreen({
   onFinish,
 }: {
   onBack: () => void
-  onFinish: () => void
+  onFinish: (userId: string, email: string) => void
 }) {
   const insets = useSafeAreaInsets()
   const [role, setRole] = useState<'STUDENT' | 'PARENT'>('STUDENT')
@@ -183,20 +184,32 @@ export default function RegisterScreen({
       return
     }
     if (!agreed) {
-      setError("You must accept the Terms and Conditions to proceed")
+      setError('You must accept the Terms and Conditions to proceed')
       return
     }
     setLoading(true)
     setError('')
     try {
-      onFinish()
+      const nameParts = fullName.trim().split(' ')
+      const prenom = nameParts[0]
+      const nom = nameParts.slice(1).join(' ') || prenom
+
+      const data = await registerUser({
+        nom,
+        prenom,
+        email,
+        password,
+        role,
+        phone,
+      })
+      onFinish(data.userId, data.email)
     } catch (e: any) {
-      setError(e?.response?.data?.message || "An error occurred during registration")
+      setError(e?.response?.data?.message || 'An error occurred during registration')
     } finally {
       setLoading(false)
     }
   }
-
+  
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: '#FFFFFF' }}

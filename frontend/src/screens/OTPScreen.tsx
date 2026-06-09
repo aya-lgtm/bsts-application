@@ -13,14 +13,16 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
+import { resendOTPAPI, verifyResetOTPAPI, forgotPasswordAPI  } from '../services/auth.service'
 
 const { width } = Dimensions.get('window')
 const OTP_LENGTH = 6
 
-export default function OTPScreen({ email, onBack, onSuccess }: {
+export default function OTPScreen({ email, userId, onBack, onSuccess }: {
   email: string
+  userId: string
   onBack: () => void
-  onSuccess: () => void
+  onSuccess: (userId: string, otpCode: string) => void
 }) {
   const insets = useSafeAreaInsets()
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''))
@@ -63,21 +65,24 @@ export default function OTPScreen({ email, onBack, onSuccess }: {
     setLoading(true)
     setError('')
     try {
-      // TODO: connecter à l'API OTP verify
-      await new Promise(r => setTimeout(r, 1000))
-      onSuccess()
+      await verifyResetOTPAPI(userId, code)
+      onSuccess(userId, code)
     } catch (e: any) {
-      setError('Incorrect or expired verification code')
+      setError(e?.response?.data?.message || 'Incorrect or expired code')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleResend = () => {
+  const handleResend = async () => {
     setTimer(45)
     setOtp(Array(OTP_LENGTH).fill(''))
     setError('')
-    // TODO: appeler l'API resend
+    try {
+      await forgotPasswordAPI(email)
+    } catch (e) {
+      setError('Error resending code. Please try again.')
+    }
   }
 
   const formatTime = (s: number) => {

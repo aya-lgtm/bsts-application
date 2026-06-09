@@ -11,13 +11,18 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen'
 import OTPScreen from './src/screens/OTPScreen'
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen'
 import PasswordResetSuccessScreen from './src/screens/PasswordResetSuccessScreen'
+import RegisterOTPScreen from './src/screens/RegisterOTPScreen'
 
-type Screen = 'splash' | 'onboarding' | 'login' | 'home_student' | 'home_admin' | 'home_professor' | 'home_parent' | 'register' | 'forgot_password' | 'otp' | 'reset_password' | 'password_success'
+type Screen = 'splash' | 'onboarding' | 'login' | 'home_student' | 'home_admin' | 'home_professor' | 'home_parent' | 'register' | 'forgot_password' | 'otp' | 'reset_password' | 'password_success' | 'register_otp' 
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash')
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null)
   const [resetEmail, setResetEmail] = useState('')
+  const [resetUserId, setResetUserId] = useState('')
+  const [resetOtpCode, setResetOtpCode] = useState('')
+  const [registerUserId, setRegisterUserId] = useState('')
+  const [registerEmail, setRegisterEmail] = useState('')
 
   useEffect(() => {
     AsyncStorage.getItem('onboarding_done').then((value) => {
@@ -87,29 +92,41 @@ export default function App() {
         </View>
       )}
       {screen === 'register' && (
-        <RegisterScreen
-          onBack={() => setScreen('login')}
-          onFinish={() => setScreen('login')}
-        />
-      )}
+       <RegisterScreen
+    onBack={() => setScreen('login')}
+    onFinish={(userId, email) => {
+      setRegisterUserId(userId)
+      setRegisterEmail(email)
+      setScreen('register_otp')
+    }}
+  />
+)}
       {screen === 'forgot_password' && (
         <ForgotPasswordScreen
           onBack={() => setScreen('login')}
-          onSent={(email) => {
+          onSent={(email, userId) => {
             setResetEmail(email)
+            setResetUserId(userId)
             setScreen('otp')
           }}
         />
       )}
       {screen === 'otp' && (
-        <OTPScreen
-          email={resetEmail}
-          onBack={() => setScreen('forgot_password')}
-          onSuccess={() => setScreen('reset_password')}
-        />
-      )}
+  <OTPScreen
+    email={resetEmail}
+    userId={resetUserId}
+    onBack={() => setScreen('forgot_password')}
+    onSuccess={(userId, otpCode) => {
+      setResetUserId(userId)
+      setResetOtpCode(otpCode)
+      setScreen('reset_password')
+    }}
+  />
+)}
       {screen === 'reset_password' && (
         <ResetPasswordScreen
+        userId={resetUserId}
+        otpCode={resetOtpCode}
           onBack={() => setScreen('login')}
           onSuccess={() => setScreen('password_success')}
         />
@@ -117,6 +134,15 @@ export default function App() {
       {screen === 'password_success' && (
         <PasswordResetSuccessScreen onBack={() => setScreen('login')} />
       )}
+
+      {screen === 'register_otp' && (
+  <RegisterOTPScreen
+    email={registerEmail}
+    userId={registerUserId}
+    onBack={() => setScreen('register')}
+    onSuccess={() => setScreen('login')}
+  />
+)}
     </SafeAreaProvider>
   )
 }
@@ -125,3 +151,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   text: { color: '#FFFFFF', fontSize: 18 },
 })
+

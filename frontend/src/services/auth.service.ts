@@ -2,7 +2,7 @@ import axios from 'axios'
 import * as SecureStore from 'expo-secure-store'
 
 // ⚠️ Remplace par l'IP de ton Mac (pas localhost)
-const API_URL = 'http://192.168.1.5:3000/api/v1'
+const API_URL = 'http://192.168.1.7:3000/api/v1'
 
 const api = axios.create({
   baseURL: API_URL,
@@ -76,4 +76,42 @@ export const logoutUser = async () => {
 export const getStoredUser = async () => {
   const user = await SecureStore.getItemAsync('user')
   return user ? JSON.parse(user) : null
+}
+
+export const forgotPasswordAPI = async (emailOrUsername: string) => {
+  const response = await api.post('/auth/forgot-password', { emailOrUsername })
+  return response.data // retourne { userId, message }
+}
+
+export const verifyOTPAPI = async (userId: string, otpCode: string) => {
+  const response = await api.post('/auth/verify-otp', { userId, otpCode })
+  return response.data
+}
+
+export const resetPasswordAPI = async (userId: string, otpCode: string, newPassword: string) => {
+  const response = await api.post('/auth/reset-password', { userId, otpCode, newPassword })
+  return response.data
+}
+
+export const resendOTPAPI = async (userId: string) => {
+  const response = await api.post('/auth/resend-otp', { userId })
+  return response.data
+}
+
+export const verifyResetOTPAPI = async (userId: string, otpCode: string) => {
+  const response = await api.post('/auth/verify-reset-otp', { userId, otpCode })
+  return response.data
+}
+
+
+export const registerUser = async (data: {
+  nom: string
+  prenom: string
+  email: string
+  password: string
+  role: 'STUDENT' | 'PARENT'
+  phone?: string
+}) => {
+  const response = await api.post('/auth/register', data)
+  return response.data // retourne { userId, email, message }
 }

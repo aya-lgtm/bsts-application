@@ -14,10 +14,13 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
+import { resetPasswordAPI } from '../services/auth.service'
 
 const { width } = Dimensions.get('window')
 
-export default function ResetPasswordScreen({ onBack, onSuccess }: {
+export default function ResetPasswordScreen({ userId, otpCode, onBack, onSuccess }: {
+  userId: string
+  otpCode: string
   onBack: () => void
   onSuccess: () => void
 }) {
@@ -39,21 +42,20 @@ export default function ResetPasswordScreen({ onBack, onSuccess }: {
       return
     }
     if (!hasMinLength || !hasNumber || !hasUppercase) {
-      setError('Le mot de passe ne respecte pas les critères')
+      setError('Password does not meet the requirements')
       return
     }
     if (password !== confirmPassword) {
-      setError('Password does not meet the requirements')
+      setError('Passwords do not match')
       return
     }
     setLoading(true)
     setError('')
     try {
-      // TODO: connecter à l'API reset password
-      await new Promise(r => setTimeout(r, 1000))
+      await resetPasswordAPI(userId, otpCode, password)
       onSuccess()
     } catch (e: any) {
-      setError('Password reset failed. Please try again')
+      setError(e?.response?.data?.message || 'Password reset failed. Please try again')
     } finally {
       setLoading(false)
     }
