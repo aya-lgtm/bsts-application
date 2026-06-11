@@ -186,5 +186,101 @@ const addSATQuestion = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET progression SAT d'un utilisateur
+const getSATProgress = async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints };
+    const sessions = await SATSession.findAll({
+      where: { userId, isCompleted: true },
+      order: [['createdAt', 'ASC']],
+    });
+
+    if (sessions.length === 0) {
+      return res.status(200).json({
+        currentScore: 0,
+        targetScore: 1500,
+        globalProgress: 0,
+        monthlyProgress: 0,
+        satHistory: [],
+      });
+    }
+
+    // Score actuel = dernier score SAT
+    const lastSession = sessions[sessions.length - 1];
+    const currentScore = lastSession.scoreSAT || 0;
+
+    // Progression globale
+    const globalProgress = Math.round((currentScore / 1600) * 100);
+
+    // Progression mensuelle
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const lastMonthSessions = sessions.filter(s => new Date(s.createdAt) >= lastMonth);
+    const monthlyProgress = lastMonthSessions.length > 0
+      ? Math.round(((currentScore - (lastMonthSessions[0].scoreSAT || 0)) / 1600) * 100)
+      : 0;
+
+    // Historique des scores
+    const satHistory = sessions.map(s => ({
+      date: new Date(s.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+      score: s.scoreSAT || 0,
+    }));
+
+    return res.status(200).json({
+      currentScore,
+      targetScore: 1500,
+      globalProgress,
+      monthlyProgress,
+      satHistory,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// GET scores par section SAT d'un utilisateur
+const getSATSections = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const sessions = await SATSession.findAll({
+      where: { userId, isCompleted: true },
+      order: [['createdAt', 'DESC']],
+      limit: 5,
+    });
+
+    if (sessions.length === 0) {
+      return res.status(200).json({
+        sections: [
+          { name: 'Math', score: 0, maxScore: 800, color: '#0D6B5E' },
+          { name: 'Reading & Writing', score: 0, maxScore: 800, color: '#D4A017' },
+          { name: 'Evidence-Based Reading', score: 0, maxScore: 400, color: '#4A90E2' },
+          { name: 'Math Advanced', score: 0, maxScore: 400, color: '#E24A4A' },
+        ],
+      });
+    }
+
+    // Calculer les scores moyens par domaine
+    const mathSessions = sessions.filter(s => s.domaine === 'MATH' || s.domaine === 'ALL');
+    const readingSessions = sessions.filter(s => s.domaine === 'READING' || s.domaine === 'ALL');
+    const writingSessions = sessions.filter(s => s.domaine === 'WRITING' || s.domaine === 'ALL');
+
+    const avgScore = (arr) => {
+      if (arr.length === 0) return 0;
+      return Math.round(arr.reduce((sum, s) => sum + (s.scoreSAT || 0), 0) / arr.length / 2);
+    };
+
+    return res.status(200).json({
+      sections: [
+        { name: 'Math', score: avgScore(mathSessions), maxScore: 800, color: '#0D6B5E' },
+        { name: 'Reading & Writing', score: avgScore(readingSessions), maxScore: 800, color: '#D4A017' },
+        { name: 'Evidence-Based Reading', score: avgScore(readingSessions), maxScore: 400, color: '#4A90E2' },
+        { name: 'Math Advanced', score: avgScore(mathSessions), maxScore: 400, color: '#E24A4A' },
+      ],
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections };

@@ -6,6 +6,8 @@ const {
   submitSession,
   getStats,
   addSATQuestion,
+  getSATProgress,
+  getSATSections,
 } = require('../controllers/sat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -20,6 +22,12 @@ router.post('/sessions/:sessionId/submit', authenticate, submitSession);
 
 // GET statistiques SAT
 router.get('/stats', authenticate, getStats);
+
+// GET progression SAT d'un utilisateur
+router.get('/progress/:userId', authenticate, getSATProgress);
+
+// GET scores par section SAT d'un utilisateur
+router.get('/sections/:userId', authenticate, getSATSections);
 
 // POST ajouter une question SAT (ADMIN seulement)
 router.post('/questions', authenticate, authorize('ADMIN'), addSATQuestion);
