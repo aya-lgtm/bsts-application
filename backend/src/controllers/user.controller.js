@@ -270,6 +270,152 @@ const changePassword = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET enfants d'un parent avec leurs stats (pour ParentHomeScreen)
+const getParentChildrenStats = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const { Progress, SATSession, Lesson } = require('../models');
+
+    const children = await User.findAll({
+      where: { parentId, role: 'STUDENT' },
+      attributes: ['id', 'nom', 'prenom', 'photo'],
+    });
+
+    const parent = await User.findByPk(parentId, { attributes: ['nom', 'prenom'] });
+
+    const result = [];
+
+    for (const child of children) {
+      // Dernier score SAT
+      const lastSession = await SATSession.findOne({
+        where: { userId: child.id, isCompleted: true },
+        order: [['createdAt', 'DESC']],
+      });
+
+      // Progression cours
+      const totalLessons = await Lesson.count({ where: { isActive: true } });
+      const completedLessons = await Progress.count({
+        where: { userId: child.id, isCompleted: true },
+      });
+
+      const progressPercent = totalLessons > 0
+        ? Math.round((completedLessons / totalLessons) * 100)
+        : 0;
+
+      // Streak (gamification)
+      const { Gamification } = require('../models');
+      const gamification = await Gamification.findOne({ where: { userId: child.id } });
+
+      result.push({
+        id: child.id,
+        name: `${child.prenom} ${child.nom}`,
+        classe: 'N/A',
+        satScore: lastSession ? lastSession.scoreSAT : 0,
+        avatar: child.photo || null,
+        progressPercent,
+        coursesCompleted: completedLessons,
+        coursesTotal: totalLessons,
+        streak: gamification ? gamification.streak : 0,
+      });
+    }
+
+    return res.status(200).json({
+      parentName: parent ? `${parent.prenom} ${parent.nom}` : '',
+      children: result,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// GET activité récente des enfants d'un parent
+const getParentChildrenActivity = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+    const { Progress, QuizResult, SATSession, Lesson, Quiz, Chapter } = require('../models');
+
+    const children = await User.findAll({
+      where: { parentId, role: 'STUDENT' },
+      attributes: ['id', 'nom', 'prenom'],
+    });
+
+    const childrenIds = children.map(c => c.id);
+    const childrenMap = {};
+    children.forEach(c => { childrenMap[c.id] = `${c.prenom} ${c.nom}`; });
+
+    const activities = [];
+
+    // Leçons complétées
+    const progresses = await Progress.findAll({
+      where: { userId: childrenIds, isCompleted: true },
+      include: [{ model: Lesson, attributes: ['titre'] }],
+      order: [['updatedAt', 'DESC']],
+      limit,
+    });
+
+    progresses.forEach(p => {
+      activities.push({
+        id: `progress_${p.id}`,
+        childName: childrenMap[p.userId] || '',
+        type: 'lesson',
+        title: 'Leçon terminée',
+        subtitle: p.Lesson ? p.Lesson.titre : '',
+        date: p.updatedAt,
+        icon: 'book',
+        iconColor: '#0D6B5E',
+      });
+    });
+
+    // Quiz complétés
+    const quizResults = await QuizResult.findAll({
+      where: { userId: childrenIds },
+      include: [{ model: Quiz, attributes: ['titre'] }],
+      order: [['createdAt', 'DESC']],
+      limit,
+    });
+
+    quizResults.forEach(q => {
+      activities.push({
+        id: `quiz_${q.id}`,
+        childName: childrenMap[q.userId] || '',
+        type: 'quiz',
+        title: q.isPassed ? 'Quiz réussi' : 'Quiz échoué',
+        subtitle: `${q.Quiz ? q.Quiz.titre : ''} - Score: ${q.score}%`,
+        date: q.createdAt,
+        icon: 'help-circle',
+        iconColor: q.isPassed ? '#0D6B5E' : '#E24A4A',
+      });
+    });
+
+    // Sessions SAT
+    const satSessions = await SATSession.findAll({
+      where: { userId: childrenIds, isCompleted: true },
+      order: [['createdAt', 'DESC']],
+      limit,
+    });
+
+    satSessions.forEach(s => {
+      activities.push({
+        id: `sat_${s.id}`,
+        childName: childrenMap[s.userId] || '',
+        type: 'score',
+        title: 'Session SAT terminée',
+        subtitle: `Score: ${s.scoreSAT}/1600`,
+        date: s.createdAt,
+        icon: 'trending-up',
+        iconColor: '#D4A017',
+      });
+    });
+
+    // Trier par date DESC et limiter
+    activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return res.status(200).json({ activity: activities.slice(0, limit) });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
@@ -282,4 +428,6 @@ module.exports = {
   linkChild,
   unlinkChild,
   changePassword,
+  getParentChildrenStats,
+  getParentChildrenActivity,
 };

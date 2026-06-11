@@ -8,6 +8,7 @@ const {
   addSATQuestion,
   getSATProgress,
   getSATSections,
+  getParentSATProgress,
 } = require('../controllers/sat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -22,6 +23,9 @@ router.post('/sessions/:sessionId/submit', authenticate, submitSession);
 
 // GET statistiques SAT
 router.get('/stats', authenticate, getStats);
+
+// GET progression SAT de tous les enfants d'un parent
+router.get('/parent/:parentId/progress', authenticate, getParentSATProgress);
 
 // GET progression SAT d'un utilisateur
 router.get('/progress/:userId', authenticate, getSATProgress);

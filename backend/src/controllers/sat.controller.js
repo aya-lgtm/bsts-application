@@ -1,4 +1,4 @@
-const { SATQuestion, SATSession, Gamification } = require('../models');
+const { SATQuestion, SATSession, Gamification, User } = require('../models');
 const { Op } = require('sequelize');
 
 // GET questions SAT avec filtres
@@ -283,4 +283,74 @@ const getSATSections = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections };
+// GET progression SAT de tous les enfants d'un parent
+const getParentSATProgress = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+
+    const children = await User.findAll({
+      where: { parentId, role: 'STUDENT' },
+      attributes: ['id', 'nom', 'prenom'],
+    });
+
+    const result = [];
+
+    for (const child of children) {
+      const sessions = await SATSession.findAll({
+        where: { userId: child.id, isCompleted: true },
+        order: [['createdAt', 'ASC']],
+      });
+
+      const lastSession = sessions[sessions.length - 1];
+      const currentScore = lastSession ? (lastSession.scoreSAT || 0) : 0;
+      const targetScore = 1500;
+      const globalProgress = Math.round((currentScore / 1600) * 100);
+
+      const lastMonth = new Date();
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      const lastMonthSessions = sessions.filter(s => new Date(s.createdAt) >= lastMonth);
+      const monthlyProgress = lastMonthSessions.length > 0
+        ? Math.round(((currentScore - (lastMonthSessions[0].scoreSAT || 0)) / 1600) * 100)
+        : 0;
+
+      const satHistory = sessions.map(s => ({
+        date: new Date(s.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+        score: s.scoreSAT || 0,
+      }));
+
+      const recentSessions = sessions.slice(-5);
+      const mathSessions = recentSessions.filter(s => s.domaine === 'MATH' || s.domaine === 'ALL');
+      const readingSessions = recentSessions.filter(s => s.domaine === 'READING' || s.domaine === 'ALL');
+
+      const avgScore = (arr) => {
+        if (arr.length === 0) return 0;
+        return Math.round(arr.reduce((sum, s) => sum + (s.scoreSAT || 0), 0) / arr.length / 2);
+      };
+
+      const sections = [
+        { name: 'Math', score: avgScore(mathSessions), maxScore: 800, color: '#0D6B5E', icon: 'calculator' },
+        { name: 'Reading & Writing', score: avgScore(readingSessions), maxScore: 800, color: '#D4A017', icon: 'book' },
+        { name: 'Evidence-Based Reading', score: avgScore(readingSessions), maxScore: 400, color: '#4A90E2', icon: 'file-text' },
+        { name: 'Math Advanced', score: avgScore(mathSessions), maxScore: 400, color: '#E24A4A', icon: 'trending-up' },
+      ];
+
+      result.push({
+        userId: child.id,
+        name: `${child.prenom} ${child.nom}`,
+        classe: 'N/A',
+        avatarInitial: child.prenom ? child.prenom[0].toUpperCase() : '?',
+        currentScore,
+        targetScore,
+        globalProgress,
+        monthlyProgress,
+        satHistory,
+        sections,
+      });
+    }
+
+    return res.status(200).json({ children: result });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections, getParentSATProgress };
