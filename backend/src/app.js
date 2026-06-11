@@ -16,13 +16,14 @@ const satRoutes = require('./routes/sat.routes');
 const gamificationRoutes = require('./routes/gamification.routes');
 const chatRoutes = require('./routes/chat.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 // Initialiser Sentry
 initSentry();
 
 const app = express();
 
-// Sentry request handler (doit être en premier)
+// Sentry request handler
 app.use(Sentry.expressErrorHandler());
 
 // Webhook Stripe doit être avant express.json()
@@ -54,13 +55,14 @@ app.use('/api/v1/sat', satRoutes);
 app.use('/api/v1/gamification', gamificationRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/payment', paymentRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
   res.json({ message: 'BSTS API is running 🚀' });
 });
 
-// Sentry error handler (doit être après les routes)
+// Sentry error handler
 app.use(Sentry.expressErrorHandler());
 
 module.exports = app;

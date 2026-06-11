@@ -46,6 +46,10 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  parentId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
   resetPasswordToken: {
     type: DataTypes.STRING,
     allowNull: true,
@@ -66,5 +70,9 @@ const User = sequelize.define('User', {
   tableName: 'users',
   timestamps: true,
 });
+
+// Auto-relation parent-enfant
+User.hasMany(User, { foreignKey: 'parentId', as: 'children' });
+User.belongsTo(User, { foreignKey: 'parentId', as: 'parent' });
 
 module.exports = User;
