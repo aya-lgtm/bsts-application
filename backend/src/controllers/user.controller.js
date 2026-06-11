@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
-const { User, UserProfile } = require('../models');
 const { createNotification } = require('./notification.controller');
+ const { User, UserProfile, Gamification, SATSession } = require('../models');
 
 const getProfile = async (req, res) => {
   try {
@@ -131,13 +131,51 @@ const createUserByAdmin = async (req, res) => {
 
 // GET mes enfants (PARENT seulement)
 const getMyChildren = async (req, res) => {
+  
   try {
     const children = await User.findAll({
       where: { parentId: req.user.id },
-      attributes: { exclude: ['password'] },
+      attributes: { exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'otpCode', 'otpExpires'] },
+      include: [
+        {
+          model: UserProfile,
+          as: 'profile',          // assure-toi que l'association est définie : User.hasOne(UserProfile, { foreignKey: 'userId', as: 'profile' })
+          attributes: ['niveauScolaire', 'photo', 'progression'],
+          required: false,
+        },
+        {
+          model: Gamification,
+          as: 'gamification',     // assure-toi : User.hasOne(Gamification, { foreignKey: 'userId', as: 'gamification' })
+          attributes: ['points', 'niveau', 'streak', 'badges'],
+          required: false,
+        },
+      ],
     });
-
-    return res.status(200).json({ children });
+ 
+    // Calculer le meilleur score SAT pour chaque enfant
+    const { SATSession } = require('../models');
+    const childrenWithSAT = await Promise.all(
+      children.map(async (child) => {
+        const bestSession = await SATSession.findOne({
+          where: { userId: child.id },
+          order: [['totalScore', 'DESC']],
+          attributes: ['totalScore', 'mathScore', 'readingScore'],
+        });
+ 
+        return {
+          ...child.toJSON(),
+          satBestScore: bestSession
+            ? {
+                total: bestSession.totalScore,
+                math: bestSession.mathScore,
+                reading: bestSession.readingScore,
+              }
+            : null,
+        };
+      })
+    );
+ 
+    return res.status(200).json({ children: childrenWithSAT });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }

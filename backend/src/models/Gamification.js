@@ -33,7 +33,8 @@ const Gamification = sequelize.define('Gamification', {
   timestamps: true,
 });
 
+// ✅ Doit ressembler à ça
 Gamification.belongsTo(User, { foreignKey: 'userId' });
-User.hasOne(Gamification, { foreignKey: 'userId' });
+User.hasOne(Gamification, { foreignKey: 'userId', as: 'gamification' });
 
 module.exports = Gamification;

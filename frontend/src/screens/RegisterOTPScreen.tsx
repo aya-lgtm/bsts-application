@@ -18,7 +18,7 @@ import axios from 'axios'
 
 const { width } = Dimensions.get('window')
 const OTP_LENGTH = 6
-const API_URL = 'http://192.168.1.7:3000/api/v1'
+const API_URL = 'http://192.168.1.5:3000/api/v1'
 
 export default function RegisterOTPScreen({ email, userId, onBack, onSuccess }: {
   email: string

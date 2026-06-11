@@ -2,7 +2,7 @@ import axios from 'axios'
 import * as SecureStore from 'expo-secure-store'
 
 // ⚠️ Remplace par l'IP de ton Mac (pas localhost)
-const API_URL = 'http://192.168.1.7:3000/api/v1'
+const API_URL = 'http://192.168.1.5:3000/api/v1'
 
 const api = axios.create({
   baseURL: API_URL,

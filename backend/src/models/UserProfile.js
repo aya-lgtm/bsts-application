@@ -37,6 +37,6 @@ const UserProfile = sequelize.define('UserProfile', {
 
 // Association
 UserProfile.belongsTo(User, { foreignKey: 'userId' });
-User.hasOne(UserProfile, { foreignKey: 'userId' });
+User.hasOne(UserProfile, { foreignKey: 'userId', as: 'profile' });
 
 module.exports = UserProfile;

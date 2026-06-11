@@ -108,6 +108,7 @@ const createCheckoutSession = async (req, res) => {
       reductionPourcent,
     });
   } catch (error) {
+    console.error('❌ Checkout error:', error.message);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
