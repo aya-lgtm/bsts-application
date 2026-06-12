@@ -416,6 +416,84 @@ const getParentChildrenActivity = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET recherche d'utilisateurs (pour lier un enfant)
+const searchUsers = async (req, res) => {
+  try {
+    const { q, role } = req.query;
+    const { Op } = require('sequelize');
+
+    if (!q || !role) {
+      return res.status(400).json({ message: 'Paramètres manquants' });
+    }
+
+    const users = await User.findAll({
+      where: {
+        role: role.toUpperCase(),
+        [Op.or]: [
+          { email: { [Op.iLike]: `%${q}%` } },
+          { prenom: { [Op.iLike]: `%${q}%` } },
+          { nom: { [Op.iLike]: `%${q}%` } },
+          { username: { [Op.iLike]: `%${q}%` } },
+        ],
+      },
+      attributes: ['id', 'prenom', 'nom', 'email'],
+      limit: 10,
+    });
+
+    const formatted = users.map(u => ({
+      id: u.id,
+      name: `${u.prenom} ${u.nom}`,
+      email: u.email,
+      classe: '—',
+    }));
+
+    return res.status(200).json({ users: formatted });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST envoyer une demande de liaison parent-enfant
+const sendLinkRequest = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const { childId } = req.body;
+
+    if (req.user.id !== parentId || req.user.role !== 'PARENT') {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+
+    const child = await User.findOne({ where: { id: childId, role: 'STUDENT' } });
+    if (!child) {
+      return res.status(404).json({ message: 'Étudiant non trouvé' });
+    }
+
+    if (child.parentId) {
+      return res.status(400).json({ message: 'Cet étudiant est déjà lié à un parent' });
+    }
+
+    await child.update({ parentId });
+
+    await createNotification(
+      child.id,
+      'streak',
+      'Compte lié à un parent',
+      'Votre compte a été lié à un compte parent'
+    );
+
+    return res.status(200).json({
+      message: 'Demande de liaison envoyée avec succès !',
+      child: {
+        id: child.id,
+        nom: child.nom,
+        prenom: child.prenom,
+        email: child.email,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
@@ -430,4 +508,6 @@ module.exports = {
   changePassword,
   getParentChildrenStats,
   getParentChildrenActivity,
+  searchUsers,
+  sendLinkRequest,
 };

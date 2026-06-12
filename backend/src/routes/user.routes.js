@@ -13,9 +13,12 @@ const {
   changePassword,
   getParentChildrenStats,
   getParentChildrenActivity,
+  searchUsers,
+  sendLinkRequest,
 } = require('../controllers/user.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
+router.get('/search', authenticate, searchUsers);
 router.get('/profile', authenticate, getProfile);
 router.put('/profile', authenticate, updateProfile);
 router.put('/change-password', authenticate, changePassword);
@@ -24,6 +27,7 @@ router.post('/link-child', authenticate, authorize('PARENT'), linkChild);
 router.delete('/unlink-child/:childId', authenticate, authorize('PARENT'), unlinkChild);
 router.get('/:parentId/children', authenticate, getParentChildrenStats);
 router.get('/:parentId/activity', authenticate, getParentChildrenActivity);
+router.post('/:parentId/link-request', authenticate, authorize('PARENT'), sendLinkRequest);
 router.get('/', authenticate, authorize('ADMIN'), getAllUsers);
 router.get('/role/:role', authenticate, authorize('ADMIN'), getUsersByRole);
 router.delete('/:id', authenticate, authorize('ADMIN'), deleteUser);
