@@ -21,6 +21,10 @@ const Progress = sequelize.define('Progress', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  isBookmarked: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
 }, {
   tableName: 'progress',
   timestamps: true,

@@ -187,10 +187,61 @@ const getMyProgress = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// PATCH /lessons/:id/bookmark — ajouter/retirer un bookmark
+const bookmarkLesson = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
 
+    const lesson = await Lesson.findByPk(id);
+    if (!lesson) {
+      return res.status(404).json({ message: 'Leçon non trouvée' });
+    }
+
+    // Trouver ou créer la progression
+    const [progress] = await Progress.upsert({
+      userId,
+      lessonId: id,
+      isBookmarked: true,
+    }, {
+      returning: true,
+    });
+
+    // Toggler le bookmark
+    const currentBookmark = await Progress.findOne({ where: { userId, lessonId: id } });
+    const newBookmarkState = !currentBookmark.isBookmarked;
+    await currentBookmark.update({ isBookmarked: newBookmarkState });
+
+    return res.status(200).json({
+      message: newBookmarkState ? 'Leçon ajoutée aux favoris !' : 'Leçon retirée des favoris !',
+      isBookmarked: newBookmarkState,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// GET /lessons/bookmarks — récupérer toutes les leçons bookmarkées
+const getBookmarkedLessons = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const bookmarks = await Progress.findAll({
+      where: { userId, isBookmarked: true },
+      include: [{ model: Lesson, include: [{ model: Chapter, include: [{ model: Subject }] }] }],
+      order: [['updatedAt', 'DESC']],
+    });
+
+    const lessons = bookmarks.map(b => b.Lesson).filter(Boolean);
+
+    return res.status(200).json({ lessons });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   getAllSubjects, createSubject, updateSubject, deleteSubject,
   getChaptersBySubject, createChapter, updateChapter, deleteChapter,
   getLessonsByChapter, getLessonById, createLesson, updateLesson, deleteLesson,
-  updateProgress, getMyProgress,
+  updateProgress, getMyProgress, bookmarkLesson, getBookmarkedLessons,
 };
