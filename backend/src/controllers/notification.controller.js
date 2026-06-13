@@ -1,4 +1,5 @@
-const { Notification } = require('../models');
+const { Notification, User } = require('../models');
+const { sendPushNotification } = require('../config/firebase');
 
 const getNotifications = async (req, res) => {
   try {
@@ -52,7 +53,14 @@ const deleteNotification = async (req, res) => {
 
 const createNotification = async (userId, type, title, subtitle = '') => {
   try {
+    // Sauvegarder en base de données
     await Notification.create({ userId, type, title, subtitle });
+
+    // Envoyer notification push si l'utilisateur a un FCM token
+    const user = await User.findByPk(userId, { attributes: ['fcmToken'] });
+    if (user && user.fcmToken) {
+      await sendPushNotification(user.fcmToken, title, subtitle, { type });
+    }
   } catch (error) {
     console.error('Erreur création notification:', error.message);
   }

@@ -51,6 +51,10 @@ const User = sequelize.define('User', {
   allowNull: true,
   defaultValue: [],
 },
+fcmToken: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
   parentId: {
     type: DataTypes.UUID,
     allowNull: true,
