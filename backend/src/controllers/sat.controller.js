@@ -353,4 +353,61 @@ const getParentSATProgress = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections, getParentSATProgress };
+// GET questions ratées par l'utilisateur (Mode Erreurs)
+const getMistakes = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Récupérer toutes les sessions complétées
+    const sessions = await SATSession.findAll({
+      where: { userId, isCompleted: true },
+      order: [['createdAt', 'DESC']],
+    });
+
+    if (sessions.length === 0) {
+      return res.status(200).json({ mistakes: [], total: 0 });
+    }
+
+    // Collecter toutes les réponses incorrectes
+    const mistakes = [];
+
+    for (const session of sessions) {
+      if (!session.reponses) continue;
+
+      const reponses = typeof session.reponses === 'string'
+        ? JSON.parse(session.reponses)
+        : session.reponses;
+
+      for (const reponse of reponses) {
+        if (!reponse.isCorrect) {
+          const question = await SATQuestion.findByPk(reponse.questionId);
+          if (question) {
+            // Éviter les doublons
+            const alreadyAdded = mistakes.find(m => m.id === question.id);
+            if (!alreadyAdded) {
+              mistakes.push({
+                id: question.id,
+                question: question.question,
+                options: question.options,
+                correctAnswer: question.correctAnswer,
+                explication: question.explication,
+                domaine: question.domaine,
+                difficulte: question.difficulte,
+                userAnswer: reponse.reponse,
+                sessionDate: session.createdAt,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return res.status(200).json({
+      mistakes,
+      total: mistakes.length,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections, getParentSATProgress, getMistakes };

@@ -46,6 +46,11 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  matieres: {
+  type: DataTypes.ARRAY(DataTypes.STRING),
+  allowNull: true,
+  defaultValue: [],
+},
   parentId: {
     type: DataTypes.UUID,
     allowNull: true,
