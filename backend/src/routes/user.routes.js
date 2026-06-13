@@ -15,6 +15,8 @@ const {
   getParentChildrenActivity,
   searchUsers,
   sendLinkRequest,
+  getMyLinkRequests,
+  respondToLinkRequest,
 } = require('../controllers/user.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -25,6 +27,8 @@ router.put('/change-password', authenticate, changePassword);
 router.get('/my-children', authenticate, authorize('PARENT'), getMyChildren);
 router.post('/link-child', authenticate, authorize('PARENT'), linkChild);
 router.delete('/unlink-child/:childId', authenticate, authorize('PARENT'), unlinkChild);
+router.get('/link-requests/my-requests', authenticate, authorize('STUDENT'), getMyLinkRequests);
+router.put('/link-requests/:requestId/respond', authenticate, authorize('STUDENT'), respondToLinkRequest);
 router.get('/:parentId/children', authenticate, getParentChildrenStats);
 router.get('/:parentId/activity', authenticate, getParentChildrenActivity);
 router.post('/:parentId/link-request', authenticate, authorize('PARENT'), sendLinkRequest);

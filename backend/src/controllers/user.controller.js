@@ -485,6 +485,7 @@ const sendLinkRequest = async (req, res) => {
     const { parentId } = req.params;
     const { studentId, childId } = req.body;
     const targetId = studentId || childId;
+    const { LinkRequest } = require('../models');
 
     if (req.user.id !== parentId || req.user.role !== 'PARENT') {
       return res.status(403).json({ message: 'Accès refusé' });
@@ -503,16 +504,110 @@ const sendLinkRequest = async (req, res) => {
       return res.status(400).json({ message: 'Cet étudiant est déjà lié à un parent' });
     }
 
-    await child.update({ parentId });
+    // Vérifier qu'il n'y a pas déjà une demande en attente
+    const existing = await LinkRequest.findOne({
+      where: { parentId, studentId: targetId, status: 'PENDING' },
+    });
+    if (existing) {
+      return res.status(400).json({ message: 'Une demande est déjà en attente pour cet étudiant' });
+    }
+
+    const linkRequest = await LinkRequest.create({
+      parentId,
+      studentId: targetId,
+      status: 'PENDING',
+    });
+
+    const parent = await User.findByPk(parentId, { attributes: ['nom', 'prenom'] });
 
     await createNotification(
       child.id,
       'streak',
-      'Compte lié à un parent',
-      'Votre compte a été lié à un compte parent'
+      'Demande de liaison parent',
+      `${parent.prenom} ${parent.nom} souhaite être lié à votre compte`
     );
 
-    return res.status(200).json({ message: 'Demande envoyée' });
+    return res.status(200).json({ message: 'Demande envoyée', requestId: linkRequest.id });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+// GET demandes de liaison en attente pour l'étudiant connecté
+const getMyLinkRequests = async (req, res) => {
+  try {
+    const { LinkRequest } = require('../models');
+
+    const requests = await LinkRequest.findAll({
+      where: { studentId: req.user.id, status: 'PENDING' },
+      include: [{ model: User, as: 'parent', attributes: ['id', 'nom', 'prenom', 'email'] }],
+      order: [['createdAt', 'DESC']],
+    });
+
+    const formatted = requests.map(r => ({
+      id: r.id,
+      parentName: r.parent ? `${r.parent.prenom} ${r.parent.nom}` : '',
+      parentEmail: r.parent ? r.parent.email : '',
+      status: r.status,
+      createdAt: r.createdAt,
+    }));
+
+    return res.status(200).json({ requests: formatted });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// PUT répondre à une demande de liaison (accepter/refuser)
+const respondToLinkRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { action } = req.body; // 'ACCEPT' ou 'REJECT'
+    const { LinkRequest } = require('../models');
+
+    if (!['ACCEPT', 'REJECT'].includes(action)) {
+      return res.status(400).json({ message: 'Action invalide (ACCEPT ou REJECT)' });
+    }
+
+    const linkRequest = await LinkRequest.findOne({
+      where: { id: requestId, studentId: req.user.id, status: 'PENDING' },
+    });
+
+    if (!linkRequest) {
+      return res.status(404).json({ message: 'Demande non trouvée' });
+    }
+
+    if (action === 'ACCEPT') {
+      const student = await User.findByPk(req.user.id);
+
+      if (student.parentId) {
+        return res.status(400).json({ message: 'Vous êtes déjà lié à un parent' });
+      }
+
+      await student.update({ parentId: linkRequest.parentId });
+      await linkRequest.update({ status: 'ACCEPTED' });
+
+      await createNotification(
+        linkRequest.parentId,
+        'streak',
+        'Demande acceptée',
+        `${student.prenom} ${student.nom} a accepté votre demande de liaison`
+      );
+
+      return res.status(200).json({ message: 'Demande acceptée, compte lié avec succès !' });
+    } else {
+      await linkRequest.update({ status: 'REJECTED' });
+
+      const student = await User.findByPk(req.user.id);
+
+      await createNotification(
+        linkRequest.parentId,
+        'streak',
+        'Demande refusée',
+        `${student.prenom} ${student.nom} a refusé votre demande de liaison`
+      );
+
+      return res.status(200).json({ message: 'Demande refusée' });
+    }
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
@@ -533,4 +628,6 @@ module.exports = {
   getParentChildrenActivity,
   searchUsers,
   sendLinkRequest,
+  getMyLinkRequests,
+  respondToLinkRequest,
 };
