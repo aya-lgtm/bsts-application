@@ -69,6 +69,24 @@ function makeName(user: any): string {
     .join(' ') || user?.email || 'Utilisateur'
 }
 
+function emailToKey(email: string): string {
+  return email.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+const API_URL = 'http://192.168.1.5:3000/api/v1' // ← ajouter ici
+
+const checkTokenValid = async (email: string): Promise<boolean> => { // ← puis ici
+  try {
+    const token = await SecureStore.getItemAsync(`token_${emailToKey(email)}`)
+    if (!token) return false
+    const response = await fetch(`${API_URL}/users/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.status !== 401
+  } catch {
+    return false
+  }
+}
 // ─── Component ──────────────────────────────────────────────────────────────
 const { width } = Dimensions.get('window')
 
@@ -129,31 +147,62 @@ export default function LoginScreen({
         const accounts = await loadSavedAccounts()
         const found = accounts.find((a) => a.email === rememberedEmail)
 
-        if (found) {
-          // auto-select the account → remembered mode (password + biometric)
-          setActiveAccount(found)
-          setEmail(found.email)
-        }
+       if (found) {
+  setActiveAccount(found)
+  setEmail(found.email)
+
+  const storedUser = await SecureStore.getItemAsync(`user_${emailToKey(found.email)}`)
+  if (storedUser) {
+    const parsedUser = JSON.parse(storedUser)
+    const bioKey = parsedUser.id
+      ? `biometric_enabled_${parsedUser.id}`
+      : `biometric_enabled_${emailToKey(found.email)}`
+    const bioFlag = await SecureStore.getItemAsync(bioKey)
+    
+    if (bioFlag === 'true') {
+      // ✅ Vérifier si le token est encore valide
+      const tokenValid = await checkTokenValid(found.email)
+      setBiometricEnabled(tokenValid) // ← bio visible seulement si token valide
+      
+      if (!tokenValid) {
+        // Nettoyer les tokens expirés
+        await SecureStore.deleteItemAsync('accessToken')
+        await SecureStore.deleteItemAsync('refreshToken')
+      }
+    }
+  }
+}
       } finally {
         setInitializing(false)
       }
     })()
   }, [])
 
-  const triggerBio = async (user: any) => {
-    try {
-      setBioLoading(true)
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Connexion par empreinte",
-        disableDeviceFallback: true,
-      })
-      if (result.success) onFinish(user.role)
-    } catch (e) {
-      console.log('Bio error:', e)
-    } finally {
-      setBioLoading(false)
+  const triggerBio = async (user: any, email: string) => {
+  try {
+    setBioLoading(true)
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: "Connexion par empreinte",
+      disableDeviceFallback: true,
+    })
+    if (result.success) {
+      await SecureStore.setItemAsync('user', JSON.stringify(user))
+      
+      const token = await SecureStore.getItemAsync(`token_${emailToKey(email)}`)
+      const refresh = await SecureStore.getItemAsync(`refresh_${emailToKey(email)}`)
+      
+      if (token) await SecureStore.setItemAsync('accessToken', token)
+      if (refresh) await SecureStore.setItemAsync('refreshToken', refresh) // ← nouveau
+      
+      onFinish(user.role)
     }
+  } catch (e) {
+    console.log('Bio error:', e)
+  } finally {
+    setBioLoading(false)
   }
+
+}
 
   // ── open sheet ──────────────────────────────────────────────────────────
   const openSheet = async () => {
@@ -214,34 +263,59 @@ export default function LoginScreen({
     setLoading(true)
     setError('')
     try {
-      const { user } = await loginUser(loginEmail, password)
+  const { user, accessToken, refreshToken } = await loginUser(loginEmail, password)
 
-      // persist if rememberMe OR switching an existing account
-      if (rememberMe || activeAccount) {
-        const acc: SavedAccount = {
-          email: loginEmail,
-          name: makeName(user),
-          initials: makeInitials(user),
-        }
-        await saveAccount(acc)
-        await SecureStore.setItemAsync('remember_me', 'true')
-        await SecureStore.setItemAsync('remembered_email', loginEmail)
-      }
+  // Sauvegarder user ET token par email
+  await SecureStore.setItemAsync(`user_${emailToKey(loginEmail)}`, JSON.stringify(user))
+await SecureStore.setItemAsync(`token_${emailToKey(loginEmail)}`, accessToken)
+await SecureStore.setItemAsync(`refresh_${emailToKey(loginEmail)}`, refreshToken) // ← nouveau
+await SecureStore.setItemAsync('user', JSON.stringify(user))
+await SecureStore.setItemAsync('accessToken', accessToken)
+await SecureStore.setItemAsync('refreshToken', refreshToken)
 
-      onFinish(user.role)
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Email ou mot de passe incorrect')
-    } finally {
-      setLoading(false)
+  if (rememberMe || activeAccount) {
+    const acc: SavedAccount = {
+      email: loginEmail,
+      name: makeName(user),
+      initials: makeInitials(user),
     }
+    await saveAccount(acc)
+    await SecureStore.setItemAsync('remember_me', 'true')
+    await SecureStore.setItemAsync('remembered_email', loginEmail)
+  }
+
+  onFinish(user.role)
+} catch (e: any) {
+  setError(e?.response?.data?.message || 'Email ou mot de passe incorrect')
+} finally {
+  setLoading(false)
+}
   }
 
   // ── biometric for active remembered account ──────────────────────────────
-  const handleBiometric = async () => {
-    const storedUser = await SecureStore.getItemAsync('user')
-    if (!storedUser) return
-    triggerBio(JSON.parse(storedUser))
+  // ✅ handleBiometric unifié
+const handleBiometric = async () => {
+  if (!activeAccount) return
+
+  const storedUser = await SecureStore.getItemAsync(`user_${emailToKey(activeAccount.email)}`)
+  if (!storedUser) {
+    setError('Session expirée, veuillez vous reconnecter avec votre mot de passe.')
+    return
   }
+
+  const parsedUser = JSON.parse(storedUser)
+  const bioKey = parsedUser.id
+    ? `biometric_enabled_${parsedUser.id}`
+    : `biometric_enabled_${emailToKey(activeAccount.email)}`
+
+  const bioEnabled = await SecureStore.getItemAsync(bioKey)
+  if (bioEnabled !== 'true') {
+    setError('Empreinte non activée pour ce compte.')
+    return
+  }
+
+  triggerBio(parsedUser, activeAccount.email) // ← passer l'email
+}
 
   // ── render ───────────────────────────────────────────────────────────────
   // Don't render until SecureStore init is done (avoids mode flash)

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
@@ -35,7 +36,7 @@ interface Payment {
   createdAt: string;
 }
 
-// ─── API helpers ─────────────────────────────────────────────────────────
+// ─── API ──────────────────────────────────────────────────────────────────
 const API_URL = 'http://192.168.1.5:3000/api/v1';
 
 async function apiFetch(path: string, options: RequestInit = {}) {
@@ -53,19 +54,6 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   return data;
 }
 
-// ─── Plan labels ──────────────────────────────────────────────────────────
-const PLAN_LABEL: Record<string, string> = {
-  MONTHLY: 'Mensuel',
-  ANNUAL: 'Annuel',
-  FREE: 'Gratuit',
-};
-
-const PLAN_PRICE: Record<string, string> = {
-  MONTHLY: '99 MAD / mois',
-  ANNUAL: '899 MAD / an',
-  FREE: 'Gratuit',
-};
-
 function formatDate(iso: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('fr-FR', {
@@ -73,191 +61,174 @@ function formatDate(iso: string) {
   });
 }
 
-// ─── Subscription Card ─────────────────────────────────────────────────────
-function SubscriptionCard({
-  sub,
-  onCheckout,
-}: {
-  sub: Subscription | null;
-  onCheckout: (plan: 'MONTHLY' | 'ANNUAL') => void;
-}) {
-  if (!sub || sub.plan === 'FREE' || sub.status !== 'ACTIVE') {
-    // No active paid subscription → show plans to subscribe
-    return (
-      <View style={styles.noSubCard}>
-        <Ionicons name="lock-closed-outline" size={32} color="#0D6B5E" style={{ marginBottom: 12 }} />
-        <Text style={styles.noSubTitle}>Aucun abonnement actif</Text>
-        <Text style={styles.noSubSub}>Choisissez un plan pour accéder à tout le contenu BSTS</Text>
-
-        <View style={styles.plansRow}>
-          {/* Monthly */}
-          <TouchableOpacity style={styles.planCard} onPress={() => onCheckout('MONTHLY')}>
-            <Text style={styles.planCardTitle}>Mensuel</Text>
-            <Text style={styles.planCardPrice}>99 MAD</Text>
-            <Text style={styles.planCardPer}>/ mois</Text>
-            <View style={styles.planCardBtn}>
-              <Text style={styles.planCardBtnText}>Souscrire</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Annual */}
-          <TouchableOpacity style={[styles.planCard, styles.planCardAnnual]} onPress={() => onCheckout('ANNUAL')}>
-            <View style={styles.bestBadge}><Text style={styles.bestBadgeText}>⭐ Meilleur prix</Text></View>
-            <Text style={[styles.planCardTitle, { color: '#fff' }]}>Annuel</Text>
-            <Text style={[styles.planCardPrice, { color: '#fff' }]}>899 MAD</Text>
-            <Text style={[styles.planCardPer, { color: '#ffffffaa' }]}>/ an · ~15% de remise</Text>
-            <View style={[styles.planCardBtn, { backgroundColor: '#D4A017' }]}>
-              <Text style={styles.planCardBtnText}>Souscrire</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
+// ─── Active subscription banner (image 1) ────────────────────────────────
+function ActiveSubBanner({ sub }: { sub: Subscription }) {
   const isAnnual = sub.plan === 'ANNUAL';
-  const daysLeft = sub.endDate
-    ? Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-    : null;
+  const planLabel = isAnnual ? 'ANNUEL' : 'MENSUEL';
+  const price = sub.amount
+    ? `${Number(sub.amount).toFixed(2)} MAD / ${isAnnual ? 'an' : 'mois'}`
+    : isAnnual ? '899 MAD / an' : '99 MAD / mois';
 
   return (
-    <View style={[styles.subCard, isAnnual && styles.subCardAnnual]}>
-      {isAnnual && (
-        <View style={styles.bestValueBadge}>
-          <Text style={styles.bestValueText}>⭐ Meilleur prix</Text>
-        </View>
-      )}
-
-      <View style={styles.subCardTop}>
-        <View style={styles.subIconWrap}>
-          <Ionicons name="shield-checkmark-outline" size={24} color="#0D6B5E" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.subPlanName}>Abonnement {PLAN_LABEL[sub.plan]}</Text>
-          <View style={styles.statusRow}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>Actif</Text>
-          </View>
-        </View>
-        <View style={styles.planBadge}>
-          <Text style={styles.planText}>{PLAN_LABEL[sub.plan]}</Text>
-        </View>
-      </View>
-
-      <View style={styles.subDivider} />
-
-      <View style={styles.subDetails}>
-        <View style={styles.subDetailItem}>
-          <Text style={styles.subDetailLabel}>Montant</Text>
-          <Text style={styles.subDetailValue}>
-            {sub.amount ? `${Number(sub.amount).toFixed(0)} MAD` : PLAN_PRICE[sub.plan]}
-          </Text>
-        </View>
-        <View style={styles.subDetailItem}>
-          <Text style={styles.subDetailLabel}>Début</Text>
-          <Text style={styles.subDetailValue}>{formatDate(sub.startDate)}</Text>
-        </View>
+    <View style={styles.activeBanner}>
+      <View style={styles.activeBannerLeft}>
+        <Text style={styles.activeBannerEyebrow}>Abonnement actuel</Text>
+        <Text style={styles.activeBannerPlan}>{planLabel}</Text>
         {sub.endDate && (
-          <View style={styles.subDetailItem}>
-            <Text style={styles.subDetailLabel}>Renouvellement</Text>
-            <Text style={styles.subDetailValue}>{formatDate(sub.endDate)}</Text>
-          </View>
+          <Text style={styles.activeBannerExpiry}>
+            Expire le {formatDate(sub.endDate)}
+          </Text>
         )}
       </View>
-
-      {daysLeft !== null && daysLeft <= 7 && (
-        <View style={styles.expiryWarning}>
-          <Ionicons name="warning-outline" size={14} color="#E65100" />
-          <Text style={styles.expiryWarningText}>Expire dans {daysLeft} jour{daysLeft > 1 ? 's' : ''}</Text>
+      <View style={styles.activeBannerRight}>
+        <View style={styles.activeBadge}>
+          <Text style={styles.activeBadgeText}>ACTIF</Text>
         </View>
-      )}
+        <Text style={styles.activeBannerPrice}>{price}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Plan selector (image 2) ──────────────────────────────────────────────
+function PlanSelector({ onCheckout }: { onCheckout: (plan: 'MONTHLY' | 'ANNUAL') => void }) {
+  const [selected, setSelected] = useState<'MONTHLY' | 'ANNUAL'>('ANNUAL');
+
+  return (
+    <View style={styles.planSelectorWrap}>
+      <Text style={styles.planSelectorTitle}>Choisir un plan</Text>
+      <View style={styles.planSelectorRow}>
+        {/* Mensuel */}
+        <TouchableOpacity
+          style={[styles.planOption, selected === 'MONTHLY' && styles.planOptionSelected]}
+          onPress={() => setSelected('MONTHLY')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="calendar-outline" size={22} color={selected === 'MONTHLY' ? '#0D6B5E' : '#888'} />
+          <Text style={[styles.planOptionLabel, selected === 'MONTHLY' && styles.planOptionLabelSelected]}>
+            Mensuel
+          </Text>
+          <Text style={[styles.planOptionPrice, selected === 'MONTHLY' && styles.planOptionPriceSelected]}>
+            99 MAD / mois
+          </Text>
+          <Text style={styles.planOptionSub}>Facturation mensuelle</Text>
+          {selected === 'MONTHLY' && (
+            <View style={styles.planCheckWrap}>
+              <Ionicons name="checkmark-circle" size={22} color="#0D6B5E" />
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Annuel */}
+        <TouchableOpacity
+          style={[styles.planOption, selected === 'ANNUAL' && styles.planOptionSelected]}
+          onPress={() => setSelected('ANNUAL')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="ribbon-outline" size={22} color={selected === 'ANNUAL' ? '#D4A017' : '#888'} />
+          <Text style={[styles.planOptionLabel, selected === 'ANNUAL' && styles.planOptionLabelSelected]}>
+            Annuel
+          </Text>
+          <Text style={[styles.planOptionPrice, selected === 'ANNUAL' && styles.planOptionPriceSelected]}>
+            899 MAD / an
+          </Text>
+          <Text style={[styles.planSavings, { color: selected === 'ANNUAL' ? '#D4A017' : '#AAA' }]}>
+            Économisez ~15%
+          </Text>
+          {selected === 'ANNUAL' && (
+            <View style={styles.planCheckWrap}>
+              <Ionicons name="checkmark-circle" size={22} color="#0D6B5E" />
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Actions */}
+      <TouchableOpacity style={styles.actionRow} onPress={() => onCheckout(selected)} activeOpacity={0.85}>
+        <View style={styles.actionRowLeft}>
+          <Ionicons name="refresh-outline" size={18} color="#0D6B5E" />
+          <Text style={styles.actionRowText}>Souscrire à l'abonnement</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color="#CCC" />
+      </TouchableOpacity>
+
+      <View style={styles.actionDivider} />
 
       <TouchableOpacity
-        style={styles.manageBtn}
-        onPress={() =>
-          Alert.alert(
-            "Gérer l'abonnement",
-            "Voulez-vous annuler votre abonnement ?",
-            [
-              { text: 'Non', style: 'cancel' },
-              {
-                text: 'Oui, annuler', style: 'destructive',
-                onPress: () => Alert.alert('Info', 'Contactez le support pour annuler votre abonnement.'),
-              },
-            ]
-          )
-        }
+        style={styles.actionRow}
+        onPress={() => Alert.alert('Annulation', 'Contactez le support pour annuler votre abonnement.')}
+        activeOpacity={0.85}
       >
-        <Text style={styles.manageBtnText}>Gérer l'abonnement</Text>
+        <View style={styles.actionRowLeft}>
+          <Ionicons name="close-circle-outline" size={18} color="#E53935" />
+          <Text style={[styles.actionRowText, { color: '#E53935' }]}>Annuler l'abonnement</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color="#CCC" />
       </TouchableOpacity>
     </View>
   );
 }
 
-// ─── History Item ──────────────────────────────────────────────────────────
-function HistoryItem({ item }: { item: Payment }) {
-  const statusColor =
-    item.statut === 'COMPLETED' ? '#2E7D32' :
-    item.statut === 'FAILED'    ? '#E53935' :
-    item.statut === 'REFUNDED'  ? '#F57C00' : '#888';
-
+// ─── History Item ─────────────────────────────────────────────────────────
+function HistoryItem({ item, isLast }: { item: Payment; isLast: boolean }) {
+  const isPaid   = item.statut === 'COMPLETED';
+  const isFailed = item.statut === 'FAILED';
   const statusLabel =
-    item.statut === 'COMPLETED' ? 'Payé' :
-    item.statut === 'FAILED'    ? 'Échoué' :
-    item.statut === 'REFUNDED'  ? 'Remboursé' : 'En attente';
+    isPaid   ? 'Réussi' :
+    isFailed ? 'Échoué' :
+    item.statut === 'REFUNDED' ? 'Remboursé' : 'En attente';
+  const statusColor = isPaid ? '#2E7D32' : isFailed ? '#E53935' : item.statut === 'REFUNDED' ? '#F57C00' : '#888';
+  const planLabel = item.plan === 'ANNUAL' ? 'Abonnement Annuel' : 'Abonnement Mensuel';
 
   return (
-    <View style={styles.historyRow}>
-      <View style={styles.historyIcon}>
-        <Ionicons name="receipt-outline" size={18} color="#0D6B5E" />
+    <View style={[styles.histRow, !isLast && styles.histRowBorder]}>
+      <View style={styles.histIconWrap}>
+        <Ionicons name="card-outline" size={18} color="#0D6B5E" />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.historyTitle}>
-          Abonnement {PLAN_LABEL[item.plan]}
-          {item.codePromo ? ` · ${item.codePromo}` : ''}
-        </Text>
-        <Text style={styles.historySub}>{formatDate(item.createdAt)}</Text>
-        {item.reductionPourcent > 0 && (
-          <Text style={styles.historyDiscount}>-{item.reductionPourcent}% de réduction</Text>
-        )}
+        <Text style={styles.histTitle}>{planLabel}</Text>
+        <Text style={styles.histDate}>{formatDate(item.createdAt)}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
-        <Text style={styles.historyAmount}>{Number(item.montant).toFixed(0)} {item.devise}</Text>
-        <Text style={[styles.historyStatus, { color: statusColor }]}>{statusLabel}</Text>
+        <Text style={styles.histAmount}>{Number(item.montant).toFixed(2)} {item.devise}</Text>
+        <View style={[styles.histStatusBadge, { backgroundColor: statusColor + '18' }]}>
+          <Text style={[styles.histStatusText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
       </View>
     </View>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────
 export default function ParentPaiementsScreen({ navigation }: any) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [payments, setPayments]         = useState<Payment[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [promoCode, setPromoCode]       = useState('');
+  const [payments,     setPayments]     = useState<Payment[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [promoCode,    setPromoCode]    = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
-  const [promoResult, setPromoResult]   = useState<{ message: string; success: boolean } | null>(null);
+  const [promoResult,  setPromoResult]  = useState<{ message: string; success: boolean } | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [subRes, histRes] = await Promise.all([
-        apiFetch('/payment/subscription'),
-        apiFetch('/payment/history'),
-      ]);
-      setSubscription(subRes.subscription);
-      setPayments(histRes.payments || []);
-    } catch (e: any) {
-      console.error('Error loading payment data:', e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadData = async (isRefresh = false) => {
+  try {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    const [subRes, histRes] = await Promise.all([
+      apiFetch('/payment/subscription'),
+      apiFetch('/payment/history'),
+    ]);
+    setSubscription(subRes.subscription);
+    setPayments(histRes.payments || []);
+  } catch (e: any) {
+    console.error('Payment error:', e.message);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   const handleVerifyPromo = async () => {
     if (!promoCode.trim()) return;
@@ -286,16 +257,15 @@ export default function ParentPaiementsScreen({ navigation }: any) {
           codePromo: promoCode.trim().toUpperCase() || undefined,
         }),
       });
-      // Ouvrir l'URL Stripe dans le navigateur
-      if (data.url) {
-        await Linking.openURL(data.url);
-      }
+      if (data.url) await Linking.openURL(data.url);
     } catch (e: any) {
       Alert.alert('Erreur', e.message || 'Impossible de créer la session de paiement');
     } finally {
       setCheckoutLoading(false);
     }
   };
+
+  const hasActiveSub = subscription && subscription.plan !== 'FREE' && subscription.status === 'ACTIVE';
 
   if (loading) {
     return (
@@ -309,40 +279,46 @@ export default function ParentPaiementsScreen({ navigation }: any) {
     <SafeAreaView style={styles.safe}>
       <View style={styles.topbar}>
         <Text style={styles.topbarTitle}>Paiements</Text>
-        <TouchableOpacity onPress={loadData} style={styles.refreshBtn}>
-          <Ionicons name="refresh-outline" size={20} color="#0D6B5E" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={                          // ← ajouter ce prop
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={() => loadData(true)}
+      tintColor="#0D6B5E"
+    />
+  }
       >
-        {/* ── Abonnement actif ── */}
-        <Text style={styles.sectionTitle}>Mon abonnement</Text>
-        <SubscriptionCard sub={subscription} onCheckout={handleCheckout} />
+        {/* ── Abonnement ── */}
+        {hasActiveSub
+          ? <ActiveSubBanner sub={subscription!} />
+          : <PlanSelector onCheckout={handleCheckout} />
+        }
 
         {checkoutLoading && (
-          <View style={styles.checkoutLoading}>
+          <View style={styles.checkoutRow}>
             <ActivityIndicator size="small" color="#0D6B5E" />
-            <Text style={styles.checkoutLoadingText}>Redirection vers le paiement...</Text>
+            <Text style={styles.checkoutText}>Redirection vers le paiement…</Text>
           </View>
         )}
 
         {/* ── Code promo ── */}
+        <Text style={styles.sectionLabel}>Code promo</Text>
         <View style={styles.promoCard}>
-          <Ionicons name="pricetag-outline" size={20} color="#D4A017" />
           <TextInput
             style={styles.promoInput}
-            placeholder="Code promo"
-            placeholderTextColor="#AAA"
+            placeholder="Entrez votre code promo"
+            placeholderTextColor="#BBBBBB"
             value={promoCode}
             onChangeText={(t) => { setPromoCode(t); setPromoResult(null); }}
             autoCapitalize="characters"
           />
           <TouchableOpacity
-            style={styles.promoBtn}
+            style={[styles.promoBtn, promoLoading && { opacity: 0.6 }]}
             onPress={handleVerifyPromo}
             disabled={promoLoading}
           >
@@ -359,171 +335,179 @@ export default function ParentPaiementsScreen({ navigation }: any) {
         )}
 
         {/* ── Historique ── */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Historique des paiements</Text>
+        <Text style={styles.sectionLabel}>Historique des paiements</Text>
+        <View style={styles.histCard}>
+          {payments.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="receipt-outline" size={36} color="#CCC" />
+              <Text style={styles.emptyText}>Aucun paiement</Text>
+            </View>
+          ) : (
+            payments.map((item, idx) => (
+              <HistoryItem key={item.id} item={item} isLast={idx === payments.length - 1} />
+            ))
+          )}
+        </View>
 
-        {payments.length === 0 ? (
-          <View style={styles.emptyHistory}>
-            <Ionicons name="receipt-outline" size={36} color="#CCC" />
-            <Text style={styles.emptyHistoryText}>Aucun paiement trouvé</Text>
-          </View>
-        ) : (
-          <View style={styles.historyCard}>
-            {payments.map((item, idx) => (
-              <View key={item.id}>
-                <HistoryItem item={item} />
-                {idx < payments.length - 1 && <View style={styles.divider} />}
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={{ height: 24 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F7F6' },
-  scroll: { flex: 1 },
-  container: { paddingHorizontal: 20, paddingTop: 8 },
+  safe:      { flex: 1, backgroundColor: '#FFFFFF' },
+  scroll:    { flex: 1 },
+  container: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
 
   topbar: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingTop: 115,
+    paddingBottom: 12,
   },
-  topbarTitle: { fontSize: 22, fontWeight: '800', color: '#1A1A1A' },
-  refreshBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#0D6B5E18',
-    alignItems: 'center', justifyContent: 'center',
+  topbarTitle: { fontSize: 25, 
+    fontWeight: '800', 
+    color: '#0D6B5E',
+    position: 'absolute', // Positionnement absolu
+    left: 0,              // Pour ignorer le flux normal
+    right: 0,             // Pour ignorer le flux normal
+    textAlign: 'center',  // Centrage du texte 
+    paddingTop: 30, },
+
+  sectionLabel: {
+    fontSize: 15, fontWeight: '700', color: '#1A1A1A',
+    marginTop: 24, marginBottom: 12,
   },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 12 },
+  // ── Active banner ─────────────────────────────────────────────────────────
+  activeBanner: {
+    backgroundColor: '#0D6B5E',
+    borderRadius: 16,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  activeBannerLeft: { flex: 1 },
+  activeBannerEyebrow: {
+    fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '500', marginBottom: 4,
+  },
+  activeBannerPlan: {
+    fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: -0.5, marginBottom: 6,
+  },
+  activeBannerExpiry: {
+    fontSize: 13, color: 'rgba(255,255,255,0.75)',
+  },
+  activeBannerRight: { alignItems: 'flex-end', gap: 10 },
+  activeBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+  },
+  activeBadgeText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 1 },
+  activeBannerPrice: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.85)' },
 
-  // ── No sub card ──────────────────────────────────────────────────────────
-  noSubCard: {
-    backgroundColor: '#fff', borderRadius: 18, padding: 24,
-    alignItems: 'center', marginBottom: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 10, elevation: 4,
-  },
-  noSubTitle: { fontSize: 17, fontWeight: '700', color: '#1A1A1A', marginBottom: 6 },
-  noSubSub: { fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
-
-  plansRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  planCard: {
-    flex: 1, backgroundColor: '#F5F7F6', borderRadius: 14,
-    padding: 16, alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#E0E0E0',
-  },
-  planCardAnnual: { backgroundColor: '#0D6B5E', borderColor: '#0D6B5E' },
-  planCardTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
-  planCardPrice: { fontSize: 22, fontWeight: '800', color: '#0D6B5E' },
-  planCardPer: { fontSize: 11, color: '#888', marginTop: 2, marginBottom: 12, textAlign: 'center' },
-  planCardBtn: {
-    backgroundColor: '#0D6B5E', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 8, width: '100%', alignItems: 'center',
-  },
-  planCardBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  bestBadge: {
-    backgroundColor: '#D4A01730', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3, marginBottom: 8,
-  },
-  bestBadgeText: { fontSize: 10, fontWeight: '700', color: '#D4A017' },
-
-  // ── Active sub card ──────────────────────────────────────────────────────
-  subCard: {
-    backgroundColor: '#fff', borderRadius: 18, padding: 18,
-    marginBottom: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 10, elevation: 4,
-    position: 'relative', overflow: 'hidden',
-  },
-  subCardAnnual: { borderWidth: 1.5, borderColor: '#D4A01740' },
-  bestValueBadge: {
-    position: 'absolute', top: 12, right: 12,
-    backgroundColor: '#D4A01720', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  bestValueText: { fontSize: 10, fontWeight: '700', color: '#D4A017' },
-  subCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  subIconWrap: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#0D6B5E18',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  subPlanName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#2E7D32' },
-  statusText: { fontSize: 12, color: '#2E7D32', fontWeight: '600' },
-  planBadge: { backgroundColor: '#0D6B5E', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 5 },
-  planText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  subDivider: { height: 1, backgroundColor: '#F0F0F0', marginBottom: 14 },
-  subDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  subDetailItem: { minWidth: '28%' },
-  subDetailLabel: { fontSize: 11, color: '#888', marginBottom: 3 },
-  subDetailValue: { fontSize: 13, fontWeight: '700', color: '#1A1A1A' },
-  expiryWarning: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FFF3E0', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 7, marginBottom: 12,
-  },
-  expiryWarningText: { fontSize: 12, color: '#E65100', fontWeight: '600' },
-  manageBtn: {
-    borderWidth: 1.5, borderColor: '#0D6B5E',
-    borderRadius: 10, paddingVertical: 10, alignItems: 'center',
-  },
-  manageBtnText: { fontSize: 13, fontWeight: '700', color: '#0D6B5E' },
-
-  // ── Checkout loading ──────────────────────────────────────────────────────
-  checkoutLoading: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    justifyContent: 'center', paddingVertical: 12,
-  },
-  checkoutLoadingText: { fontSize: 13, color: '#0D6B5E', fontWeight: '500' },
-
-  // ── Promo ─────────────────────────────────────────────────────────────────
-  promoCard: {
-    backgroundColor: '#FFF9E6', borderRadius: 14, padding: 14,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginBottom: 6, borderWidth: 1, borderColor: '#D4A01730',
-  },
-  promoInput: {
-    flex: 1, fontSize: 14, color: '#1A1A1A',
-    fontWeight: '600', letterSpacing: 1,
-  },
-  promoBtn: {
-    backgroundColor: '#D4A017', borderRadius: 8,
-    paddingHorizontal: 14, paddingVertical: 8, minWidth: 80, alignItems: 'center',
-  },
-  promoBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  promoResult: { fontSize: 13, fontWeight: '600', marginBottom: 8, paddingHorizontal: 4 },
-
-  // ── History ───────────────────────────────────────────────────────────────
-  historyCard: {
-    backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 16,
+  // ── Plan selector ─────────────────────────────────────────────────────────
+  planSelectorWrap: {
+    backgroundColor: '#fff', borderRadius: 16,
+    borderWidth: 1, borderColor: '#E8E8E8',
+    overflow: 'hidden', marginTop: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  historyRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 14, gap: 12,
+  planSelectorTitle: {
+    fontSize: 17, fontWeight: '700', color: '#1A1A1A',
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12,
+    textAlign: 'center',
   },
-  historyIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#0D6B5E18',
-    justifyContent: 'center', alignItems: 'center',
+  planSelectorRow: {
+    flexDirection: 'row', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 16,
   },
-  historyTitle: { fontSize: 13, fontWeight: '600', color: '#1A1A1A' },
-  historySub: { fontSize: 11, color: '#888', marginTop: 2 },
-  historyDiscount: { fontSize: 11, color: '#2E7D32', marginTop: 2, fontWeight: '600' },
-  historyAmount: { fontSize: 14, fontWeight: '800', color: '#1A1A1A' },
-  historyStatus: { fontSize: 11, marginTop: 2, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: '#F0F0F0' },
+  planOption: {
+    flex: 1, borderRadius: 14, padding: 14,
+    borderWidth: 1.5, borderColor: '#E8E8E8',
+    backgroundColor: '#F7F8FA',
+    alignItems: 'center', gap: 4,
+    position: 'relative',
+  },
+  planOptionSelected: {
+    borderColor: '#0D6B5E', backgroundColor: '#fff',
+  },
+  planOptionLabel: { fontSize: 14, fontWeight: '700', color: '#888', marginTop: 6 },
+  planOptionLabelSelected: { color: '#1A1A1A' },
+  planOptionPrice: { fontSize: 15, fontWeight: '800', color: '#888' },
+  planOptionPriceSelected: { color: '#1A1A1A' },
+  planOptionSub: { fontSize: 11, color: '#AAA', marginTop: 2 },
+  planSavings:   { fontSize: 11, fontWeight: '700', marginTop: 2 },
+  planCheckWrap: { position: 'absolute', top: 8, right: 8 },
 
-  emptyHistory: { alignItems: 'center', paddingVertical: 32, gap: 10 },
-  emptyHistoryText: { fontSize: 14, color: '#AAA', fontWeight: '500' },
+  actionRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  actionRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionRowText: { fontSize: 14, color: '#1A1A1A', fontWeight: '500' },
+  actionDivider: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16 },
+
+  // ── Checkout ──────────────────────────────────────────────────────────────
+  checkoutRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    justifyContent: 'center', paddingVertical: 12,
+  },
+  checkoutText: { fontSize: 13, color: '#0D6B5E', fontWeight: '500' },
+
+  // ── Promo ─────────────────────────────────────────────────────────────────
+  promoCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#E8E8E8',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  promoInput: {
+    flex: 1, fontSize: 14, color: '#1A1A1A',
+    fontWeight: '500', paddingVertical: 10,
+  },
+  promoBtn: {
+    backgroundColor: '#1A1A1A', borderRadius: 10,
+    paddingHorizontal: 18, paddingVertical: 10,
+  },
+  promoBtnText:  { fontSize: 13, fontWeight: '700', color: '#fff' },
+  promoResult:   { fontSize: 13, fontWeight: '600', marginTop: 8, paddingLeft: 4 },
+
+  // ── History ───────────────────────────────────────────────────────────────
+  histCard: {
+    backgroundColor: '#fff', borderRadius: 16,
+    borderWidth: 1, borderColor: '#E8E8E8',
+    overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
+  histRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+  },
+  histRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  histIconWrap: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#0D6B5E18',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  histTitle:  { fontSize: 13, fontWeight: '600', color: '#1A1A1A' },
+  histDate:   { fontSize: 11, color: '#888', marginTop: 2 },
+  histAmount: { fontSize: 14, fontWeight: '800', color: '#1A1A1A', marginBottom: 4 },
+  histStatusBadge: {
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  histStatusText: { fontSize: 11, fontWeight: '700' },
+
+  emptyWrap: { alignItems: 'center', paddingVertical: 32, gap: 8 },
+  emptyText: { fontSize: 13, color: '#AAA', fontWeight: '500' },
 });

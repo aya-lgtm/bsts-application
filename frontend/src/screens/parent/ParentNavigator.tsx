@@ -28,15 +28,25 @@ const TABS: { key: TabKey; label: string; icon: string; iconActive: string }[] =
 export default function ParentNavigator({ onLogout }: { onLogout?: () => void }) {
   const [activeTab, setActiveTab] = React.useState<TabKey>('accueil');
 
-  const renderScreen = () => {
-    switch (activeTab) {
-      case 'accueil':       return <ParentHomeScreen navigation={null} />;
-      case 'progression':   return <ParentProgressionScreen navigation={null} />;
-      case 'paiements':     return <ParentPaiementsScreen navigation={null} />;
-      case 'notifications': return <ParentNotificationsScreen navigation={null} />;
-      case 'profil':        return <ParentProfilScreen navigation={null} onLogout={onLogout} />;
-    }
-  };
+  const navigate = (screen: string) => {
+  if (screen === 'ParentNotifications') setActiveTab('notifications');
+  if (screen === 'ParentProgression')   setActiveTab('progression');
+  if (screen === 'ParentPaiements')     setActiveTab('paiements');
+  if (screen === 'ParentProfil')        setActiveTab('profil');
+  if (screen === 'Accueil')             setActiveTab('accueil');
+};
+
+const fakeNavigation = { navigate };
+
+const renderScreen = () => {
+  switch (activeTab) {
+    case 'accueil':        return <ParentHomeScreen navigation={fakeNavigation} />;
+    case 'progression':    return <ParentProgressionScreen navigation={fakeNavigation} />;
+    case 'paiements':      return <ParentPaiementsScreen navigation={fakeNavigation} />;
+    case 'notifications':  return <ParentNotificationsScreen navigation={fakeNavigation} />;
+    case 'profil':         return <ParentProfilScreen navigation={fakeNavigation} onLogout={onLogout} />;
+  }
+};
 
   return (
     <View style={styles.wrapper}>

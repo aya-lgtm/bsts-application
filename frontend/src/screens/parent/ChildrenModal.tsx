@@ -23,8 +23,10 @@ import * as SecureStore from 'expo-secure-store';
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SATScore {
   total: number;
-  math: number;
-  reading: number;
+  score: number;
+  domaine: string;
+  bonnesReponses: number;
+  totalQuestions: number;
 }
 
 interface GamificationData {
@@ -167,17 +169,19 @@ const streak = child.gamification?.streak ?? 0;
 
       {/* SAT detail (only if available) */}
       {child.satBestScore && (
-        <View style={styles.satDetail}>
-          <View style={styles.satChip}>
-            <Text style={styles.satChipLabel}>Maths</Text>
-            <Text style={styles.satChipValue}>{child.satBestScore.math ?? '—'}</Text>
-          </View>
-          <View style={styles.satChip}>
-            <Text style={styles.satChipLabel}>Lecture</Text>
-            <Text style={styles.satChipValue}>{child.satBestScore.reading ?? '—'}</Text>
-          </View>
-        </View>
-      )}
+  <View style={styles.satDetail}>
+    <View style={styles.satChip}>
+      <Text style={styles.satChipLabel}>Domaine</Text>
+      <Text style={styles.satChipValue}>{child.satBestScore.domaine ?? '—'}</Text>
+    </View>
+    <View style={styles.satChip}>
+      <Text style={styles.satChipLabel}>Bonnes rép.</Text>
+      <Text style={styles.satChipValue}>
+        {child.satBestScore.bonnesReponses}/{child.satBestScore.totalQuestions}
+      </Text>
+    </View>
+  </View>
+)}
 
       {/* Select button */}
       {!isActive && (
@@ -222,11 +226,12 @@ export default function ChildrenModal({ visible, onClose }: ChildrenModalProps) 
       });
 
       if (!response.ok) {
-        // Log pour voir exactement l'URL en cas d'erreur
-        console.log("Erreur sur l'URL:", ENDPOINT);
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message ?? `Erreur ${response.status}`);
-      }
+  console.log("Status:", response.status)  // ← ajouté
+  console.log("Erreur sur l'URL:", ENDPOINT);
+  const data = await response.json().catch(() => ({}));
+  console.log("Response body:", data)      // ← ajouté
+  throw new Error(data.message ?? `Erreur ${response.status}`);
+}
 
       const data = await response.json();
       setChildren(data.children ?? []);

@@ -343,10 +343,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 115,
     paddingBottom: 12,
   },
-  topbarTitle: { fontSize: 25, fontWeight: '800', color: '#0D6B5E' },
+  topbarTitle: { 
+    fontSize: 25, 
+    fontWeight: '800', 
+    color: '#0D6B5E',
+    position: 'absolute', // Positionnement absolu
+    left: 0,              // Pour ignorer le flux normal
+    right: 0,             // Pour ignorer le flux normal
+    textAlign: 'center',  // Centrage du texte 
+    paddingTop: 30,
+    },
+
   markAllBtn: {
     backgroundColor: '#0D6B5E18',
     borderRadius: 16,

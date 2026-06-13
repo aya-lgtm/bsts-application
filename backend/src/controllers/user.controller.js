@@ -157,21 +157,23 @@ const getMyChildren = async (req, res) => {
     const childrenWithSAT = await Promise.all(
       children.map(async (child) => {
         const bestSession = await SATSession.findOne({
-          where: { userId: child.id },
-          order: [['totalScore', 'DESC']],
-          attributes: ['totalScore', 'mathScore', 'readingScore'],
-        });
- 
-        return {
-          ...child.toJSON(),
-          satBestScore: bestSession
-            ? {
-                total: bestSession.totalScore,
-                math: bestSession.mathScore,
-                reading: bestSession.readingScore,
-              }
-            : null,
-        };
+  where: { userId: child.id },
+  order: [['scoreSAT', 'DESC']],
+  attributes: ['scoreSAT', 'score', 'domaine', 'bonnesReponses', 'totalQuestions'],
+});
+
+return {
+  ...child.toJSON(),
+  satBestScore: bestSession
+    ? {
+        total: bestSession.scoreSAT,
+        score: bestSession.score,
+        domaine: bestSession.domaine,
+        bonnesReponses: bestSession.bonnesReponses,
+        totalQuestions: bestSession.totalQuestions,
+      }
+    : null,
+};
       })
     );
  
@@ -242,6 +244,7 @@ const unlinkChild = async (req, res) => {
 // PUT changer mot de passe
 const changePassword = async (req, res) => {
   try {
+
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {

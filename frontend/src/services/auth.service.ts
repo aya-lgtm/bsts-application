@@ -115,3 +115,10 @@ export const registerUser = async (data: {
   const response = await api.post('/auth/register', data)
   return response.data // retourne { userId, email, message }
 }
+
+export const changePasswordAPI = async (currentPassword: string, newPassword: string) => {
+  const response = await api.put('/users/change-password', { currentPassword, newPassword })
+  return response.data
+}
+
+export default api 

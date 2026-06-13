@@ -17,6 +17,7 @@ import ResetPasswordScreen from './src/screens/ResetPasswordScreen'
 import PasswordResetSuccessScreen from './src/screens/PasswordResetSuccessScreen'
 import RegisterOTPScreen from './src/screens/RegisterOTPScreen'
 import ParentNavigator from './src/screens/parent/ParentNavigator'
+import ProfessorNavigator from './src/screens/professor/ProfessorNavigator'
 
 // ─── Vérification au démarrage ─────────────────────────────────────────────
 const screens: Record<string, any> = {
@@ -129,10 +130,8 @@ export default function App() {
         </View>
       )}
       {screen === 'home_professor' && (
-        <View style={[styles.container, { backgroundColor: '#2c3e50' }]}>
-          <Text style={styles.text}>📚 Dashboard Professeur</Text>
-        </View>
-      )}
+  <ProfessorNavigator onLogout={() => setScreen('login')} />
+)}
       {screen === 'home_parent' && (
         <ParentNavigator onLogout={() => setScreen('login')} />
       )}

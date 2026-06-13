@@ -37,6 +37,10 @@ interface UserData {
   profilePicture?: string; profile_picture?: string;
 }
 
+
+function emailToKey(email: string): string {
+  return email.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
 // ─── Reusable Modal ───────────────────────────────────────────────────────
 function InfoModal({
   visible,
@@ -107,6 +111,7 @@ export default function ParentProfilScreen({
   const [showChildrenModal, setShowChildrenModal] = useState(false);
   const [showFAQ,           setShowFAQ]           = useState(false);
   const [showTerms,         setShowTerms]         = useState(false);
+  const [childCount, setChildCount] = useState(0);
 
   // Password form state
   const [currentPwd,  setCurrentPwd]  = useState('');
@@ -127,8 +132,22 @@ export default function ParentProfilScreen({
   useEffect(() => {
     loadUser();
     checkBiometric();
+    loadChildrenCount();
   }, []);
 
+
+  const loadChildrenCount = async () => {
+  try {
+    const token = await SecureStore.getItemAsync('accessToken');
+    const response = await fetch('http://192.168.1.5:3000/api/v1/users/my-children', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setChildCount(data.children?.length ?? 0);
+    }
+  } catch (_) {}
+};
   const loadUser = async () => {
     try {
       const userStr = await SecureStore.getItemAsync('user');
@@ -140,13 +159,19 @@ export default function ParentProfilScreen({
     }
   };
 
-  const checkBiometric = async () => {
-    const compatible = await LocalAuthentication.hasHardwareAsync();
-    const enrolled   = await LocalAuthentication.isEnrolledAsync();
-    setBiometricAvailable(compatible && enrolled);
-    const saved = await SecureStore.getItemAsync('biometric_enabled');
-    setBiometricEnabled(saved === 'true');
-  };
+  // checkBiometric — clé par email
+// ✅ Après
+const checkBiometric = async () => {
+  const compatible = await LocalAuthentication.hasHardwareAsync();
+  const enrolled   = await LocalAuthentication.isEnrolledAsync();
+  setBiometricAvailable(compatible && enrolled);
+  // Lire l'email depuis SecureStore car user n'est pas encore chargé
+  const stored = await SecureStore.getItemAsync('user');
+  const userEmail = stored ? JSON.parse(stored).email ?? '' : '';
+  if (!userEmail) return;
+  const saved = await SecureStore.getItemAsync(`biometric_enabled_${emailToKey(userEmail)}`);
+  setBiometricEnabled(saved === 'true');
+};
 
   // ── Normalize fields ──────────────────────────────────────────────────
   const firstName  = user?.prenom ?? user?.firstName ?? user?.first_name ?? '';
@@ -154,7 +179,6 @@ export default function ParentProfilScreen({
   const email      = user?.email      ?? '';
   const phone      = user?.phone      ?? user?.phone_number ?? '';
   const isPremium  = user?.isPremium  ?? user?.is_premium  ?? false;
-  const childCount = user?.childrenCount ?? user?.children_count ?? 0;
   const avatar     = user?.profilePicture ?? user?.profile_picture ?? null;
   const fullName   = [firstName, lastName].filter(Boolean).join(' ') || 'Parent';
   const initials   = [firstName[0], lastName[0]].filter(Boolean).join('').toUpperCase() || 'P';
@@ -186,9 +210,9 @@ export default function ParentProfilScreen({
         {
           text: 'Disable', style: 'destructive',
           onPress: async () => {
-            await SecureStore.setItemAsync('biometric_enabled', 'false');
-            setBiometricEnabled(false);
-          },
+  await SecureStore.setItemAsync(`biometric_enabled_${emailToKey(email)}`, 'false'); // ← par email
+  setBiometricEnabled(false);
+},
         },
       ]);
     } else {
@@ -212,7 +236,7 @@ export default function ParentProfilScreen({
         cancelLabel: 'Cancel',
       });
       if (result.success) {
-        await SecureStore.setItemAsync('biometric_enabled', 'true');
+        await SecureStore.setItemAsync(`biometric_enabled_${emailToKey(email)}`, 'true');
         setBiometricEnabled(true);
         setShowBioModal(false);
         Alert.alert('✅ Enabled', 'Fingerprint login is now active.');
