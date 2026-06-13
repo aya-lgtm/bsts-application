@@ -612,11 +612,47 @@ const respondToLinkRequest = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET stats du professeur connecté
+const getProfessorStats = async (req, res) => {
+  try {
+    const { Quiz, QuizResult } = require('../models');
+
+    // Quiz créés par ce prof
+    const myQuizzes = await Quiz.findAll({
+      where: { createdBy: req.user.id },
+    });
+
+    const quizIds = myQuizzes.map(q => q.id);
+
+    // Résultats des quiz de ce prof
+    const results = quizIds.length > 0 ? await QuizResult.findAll({
+      where: { quizId: quizIds },
+    }) : [];
+
+    // Score moyen
+    const avgScore = results.length > 0
+      ? Math.round(results.reduce((a, r) => a + r.score, 0) / results.length)
+      : 0;
+
+    // Étudiants distincts
+    const totalStudents = new Set(results.map(r => r.userId)).size;
+
+    return res.status(200).json({
+      totalStudents,
+      totalQuizzes: myQuizzes.length,
+      avgStudentScore: avgScore,
+      matieres: req.user.matieres || [],
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
   updateProfile,
   getAllUsers,
+  getProfessorStats,
   getUsersByRole,
   deleteUser,
   createUserByAdmin,

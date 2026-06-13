@@ -20,6 +20,10 @@ const Quiz = sequelize.define('Quiz', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  createdBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
 }, {
   tableName: 'quizzes',
   timestamps: true,
