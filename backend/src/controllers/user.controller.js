@@ -647,11 +647,31 @@ const getProfessorStats = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// PUT sauvegarder le FCM token de l'utilisateur
+const saveFCMToken = async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+
+    if (!fcmToken) {
+      return res.status(400).json({ message: 'FCM token manquant' });
+    }
+
+    await User.update(
+      { fcmToken },
+      { where: { id: req.user.id } }
+    );
+
+    return res.status(200).json({ message: 'FCM token sauvegardé !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
   updateProfile,
   getAllUsers,
+  saveFCMToken,
   getProfessorStats,
   getUsersByRole,
   deleteUser,
