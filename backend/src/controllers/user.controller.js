@@ -274,7 +274,7 @@ const changePassword = async (req, res) => {
 const getParentChildrenStats = async (req, res) => {
   try {
     const { parentId } = req.params;
-    const { Progress, SATSession, Lesson } = require('../models');
+    const { Progress, SATSession, Lesson, Gamification } = require('../models');
 
     const children = await User.findAll({
       where: { parentId, role: 'STUDENT' },
@@ -286,13 +286,11 @@ const getParentChildrenStats = async (req, res) => {
     const result = [];
 
     for (const child of children) {
-      // Dernier score SAT
       const lastSession = await SATSession.findOne({
         where: { userId: child.id, isCompleted: true },
         order: [['createdAt', 'DESC']],
       });
 
-      // Progression cours
       const totalLessons = await Lesson.count({ where: { isActive: true } });
       const completedLessons = await Progress.count({
         where: { userId: child.id, isCompleted: true },
@@ -302,17 +300,33 @@ const getParentChildrenStats = async (req, res) => {
         ? Math.round((completedLessons / totalLessons) * 100)
         : 0;
 
-      // Streak (gamification)
-      const { Gamification } = require('../models');
       const gamification = await Gamification.findOne({ where: { userId: child.id } });
+
+      const allProgress = await Progress.findAll({
+        where: { userId: child.id, isCompleted: true },
+        order: [['updatedAt', 'ASC']],
+      });
+
+      const progressHistory = [];
+      const numPoints = 5;
+      if (allProgress.length > 0 && totalLessons > 0) {
+        for (let i = 1; i <= numPoints; i++) {
+          const countAtPoint = Math.round((allProgress.length * i) / numPoints);
+          const pct = Math.round((countAtPoint / totalLessons) * 100);
+          progressHistory.push(Math.min(pct, 100));
+        }
+      } else {
+        progressHistory.push(0, 0, 0, 0, 0);
+      }
 
       result.push({
         id: child.id,
         name: `${child.prenom} ${child.nom}`,
-        classe: 'N/A',
+        classe: 'Terminale',
         satScore: lastSession ? lastSession.scoreSAT : 0,
         avatar: child.photo || null,
         progressPercent,
+        progressHistory,
         coursesCompleted: completedLessons,
         coursesTotal: totalLessons,
         streak: gamification ? gamification.streak : 0,
@@ -320,20 +334,19 @@ const getParentChildrenStats = async (req, res) => {
     }
 
     return res.status(200).json({
-      parentName: parent ? `${parent.prenom} ${parent.nom}` : '',
+      parentName: parent ? parent.prenom : '',
       children: result,
     });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 // GET activité récente des enfants d'un parent
 const getParentChildrenActivity = async (req, res) => {
   try {
     const { parentId } = req.params;
     const limit = parseInt(req.query.limit) || 5;
-    const { Progress, QuizResult, SATSession, Lesson, Quiz, Chapter } = require('../models');
+    const { Progress, QuizResult, SATSession, Lesson, Quiz } = require('../models');
 
     const children = await User.findAll({
       where: { parentId, role: 'STUDENT' },
@@ -342,11 +355,19 @@ const getParentChildrenActivity = async (req, res) => {
 
     const childrenIds = children.map(c => c.id);
     const childrenMap = {};
-    children.forEach(c => { childrenMap[c.id] = `${c.prenom} ${c.nom}`; });
+    children.forEach(c => { childrenMap[c.id] = c.prenom; });
 
     const activities = [];
 
-    // Leçons complétées
+    const formatDate = (date) => {
+      const now = new Date();
+      const d = new Date(date);
+      const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) return "Aujourd'hui";
+      if (diffDays === 1) return 'Hier';
+      return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    };
+
     const progresses = await Progress.findAll({
       where: { userId: childrenIds, isCompleted: true },
       include: [{ model: Lesson, attributes: ['titre'] }],
@@ -359,15 +380,15 @@ const getParentChildrenActivity = async (req, res) => {
         id: `progress_${p.id}`,
         childName: childrenMap[p.userId] || '',
         type: 'lesson',
-        title: 'Leçon terminée',
+        title: 'a terminé une leçon',
         subtitle: p.Lesson ? p.Lesson.titre : '',
-        date: p.updatedAt,
-        icon: 'book',
+        date: formatDate(p.updatedAt),
+        icon: 'book-outline',
         iconColor: '#0D6B5E',
+        _rawDate: p.updatedAt,
       });
     });
 
-    // Quiz complétés
     const quizResults = await QuizResult.findAll({
       where: { userId: childrenIds },
       include: [{ model: Quiz, attributes: ['titre'] }],
@@ -380,15 +401,15 @@ const getParentChildrenActivity = async (req, res) => {
         id: `quiz_${q.id}`,
         childName: childrenMap[q.userId] || '',
         type: 'quiz',
-        title: q.isPassed ? 'Quiz réussi' : 'Quiz échoué',
+        title: q.isPassed ? 'a complété un quiz' : 'a échoué un quiz',
         subtitle: `${q.Quiz ? q.Quiz.titre : ''} - Score: ${q.score}%`,
-        date: q.createdAt,
-        icon: 'help-circle',
-        iconColor: q.isPassed ? '#0D6B5E' : '#E24A4A',
+        date: formatDate(q.createdAt),
+        icon: q.isPassed ? 'checkmark-circle-outline' : 'close-circle-outline',
+        iconColor: q.isPassed ? '#4CAF50' : '#E24A4A',
+        _rawDate: q.createdAt,
       });
     });
 
-    // Sessions SAT
     const satSessions = await SATSession.findAll({
       where: { userId: childrenIds, isCompleted: true },
       order: [['createdAt', 'DESC']],
@@ -400,18 +421,23 @@ const getParentChildrenActivity = async (req, res) => {
         id: `sat_${s.id}`,
         childName: childrenMap[s.userId] || '',
         type: 'score',
-        title: 'Session SAT terminée',
+        title: 'a terminé une session SAT',
         subtitle: `Score: ${s.scoreSAT}/1600`,
-        date: s.createdAt,
-        icon: 'trending-up',
+        date: formatDate(s.createdAt),
+        icon: 'trending-up-outline',
         iconColor: '#D4A017',
+        _rawDate: s.createdAt,
       });
     });
 
-    // Trier par date DESC et limiter
-    activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+    activities.sort((a, b) => new Date(b._rawDate) - new Date(a._rawDate));
 
-    return res.status(200).json({ activity: activities.slice(0, limit) });
+    const final = activities.slice(0, limit).map(a => {
+      const { _rawDate, ...rest } = a;
+      return rest;
+    });
+
+    return res.status(200).json({ activity: final });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
@@ -444,7 +470,7 @@ const searchUsers = async (req, res) => {
       id: u.id,
       name: `${u.prenom} ${u.nom}`,
       email: u.email,
-      classe: '—',
+      classe: 'Terminale',
     }));
 
     return res.status(200).json({ users: formatted });
@@ -457,13 +483,18 @@ const searchUsers = async (req, res) => {
 const sendLinkRequest = async (req, res) => {
   try {
     const { parentId } = req.params;
-    const { childId } = req.body;
+    const { studentId, childId } = req.body;
+    const targetId = studentId || childId;
 
     if (req.user.id !== parentId || req.user.role !== 'PARENT') {
       return res.status(403).json({ message: 'Accès refusé' });
     }
 
-    const child = await User.findOne({ where: { id: childId, role: 'STUDENT' } });
+    if (!targetId) {
+      return res.status(400).json({ message: 'studentId manquant' });
+    }
+
+    const child = await User.findOne({ where: { id: targetId, role: 'STUDENT' } });
     if (!child) {
       return res.status(404).json({ message: 'Étudiant non trouvé' });
     }
@@ -481,15 +512,7 @@ const sendLinkRequest = async (req, res) => {
       'Votre compte a été lié à un compte parent'
     );
 
-    return res.status(200).json({
-      message: 'Demande de liaison envoyée avec succès !',
-      child: {
-        id: child.id,
-        nom: child.nom,
-        prenom: child.prenom,
-        email: child.email,
-      },
-    });
+    return res.status(200).json({ message: 'Demande envoyée' });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
