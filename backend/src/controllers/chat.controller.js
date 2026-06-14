@@ -185,7 +185,6 @@ const reportMessage = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 module.exports = {
   createDirectConversation,
   createGroupConversation,
