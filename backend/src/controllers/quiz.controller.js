@@ -138,5 +138,31 @@ const getMyResults = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET tous les quiz créés par le professeur connecté
+const getMyQuizzes = async (req, res) => {
+  try {
+    const quizzes = await Quiz.findAll({
+      where: { createdBy: req.user.id, isActive: true },
+      include: [
+        { model: Question, attributes: ['id'] },
+        { model: Chapter, attributes: ['titre'] },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
 
-module.exports = { getQuizByChapter, submitQuiz, createQuiz, addQuestion, getMyResults };
+    const result = quizzes.map(q => ({
+      id: q.id,
+      titre: q.titre,
+      scoreMinimum: q.scoreMinimum,
+      chapterTitre: q.Chapter?.titre ?? '—',
+      totalQuestions: q.Questions?.length ?? 0,
+      createdAt: q.createdAt,
+    }));
+
+    return res.status(200).json({ quizzes: result });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+module.exports = { getQuizByChapter, submitQuiz, createQuiz, addQuestion, getMyResults, getMyQuizzes };

@@ -6,8 +6,12 @@ const {
   createQuiz,
   addQuestion,
   getMyResults,
+  getMyQuizzes,
 } = require('../controllers/quiz.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
+
+// GET quiz créés par le professeur connecté
+router.get('/my-quizzes', authenticate, authorize('PROFESSOR', 'ADMIN'), getMyQuizzes);
 
 // GET quiz d'un chapitre
 router.get('/chapter/:chapterId', authenticate, getQuizByChapter);
