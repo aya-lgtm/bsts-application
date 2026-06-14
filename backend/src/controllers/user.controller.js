@@ -726,6 +726,54 @@ const getProfessorStudents = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET activité récente des étudiants du professeur connecté
+const getProfessorStudentsActivity = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const { Quiz, QuizResult, User: UserModel } = require('../models');
+
+    const myQuizzes = await Quiz.findAll({ where: { createdBy: req.user.id } });
+    const quizIds = myQuizzes.map(q => q.id);
+
+    if (quizIds.length === 0) {
+      return res.status(200).json({ activity: [] });
+    }
+
+    const formatDate = (date) => {
+      const now = new Date();
+      const d = new Date(date);
+      const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) return "Aujourd'hui";
+      if (diffDays === 1) return 'Hier';
+      return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    };
+
+    const quizResults = await QuizResult.findAll({
+      where: { quizId: quizIds },
+      include: [
+        { model: UserModel, attributes: ['id', 'nom', 'prenom'] },
+        { model: Quiz, attributes: ['titre'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      limit,
+    });
+
+    const activity = quizResults.map(q => ({
+      id: `quiz_${q.id}`,
+      studentName: q.User ? `${q.User.prenom} ${q.User.nom}` : '',
+      type: 'quiz',
+      title: q.isPassed ? 'a complété un quiz' : 'a échoué un quiz',
+      subtitle: `${q.Quiz ? q.Quiz.titre : ''} - Score: ${q.score}%`,
+      date: formatDate(q.createdAt),
+      icon: q.isPassed ? 'checkmark-circle-outline' : 'close-circle-outline',
+      iconColor: q.isPassed ? '#4CAF50' : '#E24A4A',
+    }));
+
+    return res.status(200).json({ activity });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
@@ -747,4 +795,5 @@ module.exports = {
   getMyLinkRequests,
   respondToLinkRequest,
   getProfessorStudents,
+  getProfessorStudentsActivity,
 };

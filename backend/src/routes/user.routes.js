@@ -20,6 +20,7 @@ const {
   getProfessorStats,
   saveFCMToken,
   getProfessorStudents,
+  getProfessorStudentsActivity
 } = require('../controllers/user.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -30,6 +31,7 @@ router.put('/change-password', authenticate, changePassword);
 router.put('/fcm-token', authenticate, saveFCMToken);
 router.get('/professor/stats', authenticate, authorize('PROFESSOR'), getProfessorStats);
 router.get('/professor/students', authenticate, authorize('PROFESSOR'), getProfessorStudents);
+router.get('/professor/students/activity', authenticate, authorize('PROFESSOR'), getProfessorStudentsActivity);
 router.get('/my-children', authenticate, authorize('PARENT'), getMyChildren);
 router.post('/link-child', authenticate, authorize('PARENT'), linkChild);
 router.delete('/unlink-child/:childId', authenticate, authorize('PARENT'), unlinkChild);
