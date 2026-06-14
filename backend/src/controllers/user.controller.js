@@ -669,6 +669,63 @@ const saveFCMToken = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET étudiants qui ont fait les quiz du professeur connecté
+const getProfessorStudents = async (req, res) => {
+  try {
+    const { Quiz, QuizResult, SATSession, Gamification } = require('../models');
+
+    const myQuizzes = await Quiz.findAll({ where: { createdBy: req.user.id } });
+    const quizIds = myQuizzes.map(q => q.id);
+
+    if (quizIds.length === 0) {
+      return res.status(200).json({ students: [] });
+    }
+
+    const results = await QuizResult.findAll({
+      where: { quizId: quizIds },
+      include: [{ model: User, attributes: ['id', 'nom', 'prenom', 'email', 'matieres'] }],
+    });
+
+    const seen = new Set();
+    const students = [];
+
+    for (const r of results) {
+      if (!r.User || seen.has(r.User.id)) continue;
+      seen.add(r.User.id);
+
+      const bestSAT = await SATSession.findOne({
+        where: { userId: r.User.id, isCompleted: true },
+        order: [['scoreSAT', 'DESC']],
+        attributes: ['scoreSAT'],
+      });
+
+      const gamif = await Gamification.findOne({
+        where: { userId: r.User.id },
+        attributes: ['streak', 'niveau', 'points'],
+      });
+
+      const studentResults = results.filter(x => x.userId === r.User.id);
+      const avgScore = studentResults.length
+        ? Math.round(studentResults.reduce((a, x) => a + x.score, 0) / studentResults.length)
+        : 0;
+
+      students.push({
+        id: r.User.id,
+        nom: r.User.nom,
+        prenom: r.User.prenom,
+        email: r.User.email,
+        scoreSAT: bestSAT?.scoreSAT ?? 0,
+        avgQuizScore: avgScore,
+        streak: gamif?.streak ?? 0,
+        niveau: gamif?.niveau ?? 'STARTER',
+      });
+    }
+
+    return res.status(200).json({ students });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getProfile,
@@ -689,4 +746,5 @@ module.exports = {
   sendLinkRequest,
   getMyLinkRequests,
   respondToLinkRequest,
+  getProfessorStudents,
 };
