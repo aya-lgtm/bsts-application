@@ -55,6 +55,10 @@ fcmToken: {
   type: DataTypes.STRING,
   allowNull: true,
 },
+chatSuspendedUntil: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
   parentId: {
     type: DataTypes.UUID,
     allowNull: true,

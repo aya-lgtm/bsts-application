@@ -133,10 +133,20 @@ const getMessages = async (req, res) => {
 };
 
 // POST envoyer un message
+// POST envoyer un message
 const sendMessage = async (req, res) => {
   try {
     const { conversationId, content } = req.body;
     const senderId = req.user.id;
+
+    // Vérifier si l'utilisateur est suspendu
+    const sender = await User.findByPk(senderId);
+    if (sender.chatSuspendedUntil && new Date(sender.chatSuspendedUntil) > new Date()) {
+      return res.status(403).json({
+        message: 'Vous êtes suspendu du chat',
+        suspendedUntil: sender.chatSuspendedUntil,
+      });
+    }
 
     // Vérifier que l'utilisateur est membre
     const member = await ConversationMember.findOne({
@@ -192,6 +202,14 @@ const sendFileMessage = async (req, res) => {
     const senderId = req.user.id;
     const file = req.file;
 
+    const sender = await User.findByPk(senderId);
+    if (sender.chatSuspendedUntil && new Date(sender.chatSuspendedUntil) > new Date()) {
+      return res.status(403).json({
+        message: 'Vous êtes suspendu du chat',
+        suspendedUntil: sender.chatSuspendedUntil,
+      });
+    }
+
     if (!file) return res.status(400).json({ message: 'Aucun fichier envoyé' });
 
     const member = await ConversationMember.findOne({
@@ -221,6 +239,53 @@ const sendFileMessage = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// POST suspendre un utilisateur du chat (ADMIN/PROFESSOR)
+const suspendUserFromChat = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { durationHours } = req.body; // ex: 24 pour 24h, null pour permanent
+
+    const targetUser = await User.findByPk(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+
+    let suspendedUntil;
+    if (durationHours) {
+      suspendedUntil = new Date(Date.now() + durationHours * 60 * 60 * 1000);
+    } else {
+      // Suspension permanente (date très lointaine)
+      suspendedUntil = new Date('2099-12-31');
+    }
+
+    await targetUser.update({ chatSuspendedUntil: suspendedUntil });
+
+    return res.status(200).json({
+      message: 'Utilisateur suspendu du chat avec succès !',
+      suspendedUntil,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST lever la suspension d'un utilisateur
+const unsuspendUserFromChat = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const targetUser = await User.findByPk(userId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+
+    await targetUser.update({ chatSuspendedUntil: null });
+
+    return res.status(200).json({ message: 'Suspension levée avec succès !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   createDirectConversation,
   createGroupConversation,
@@ -230,4 +295,6 @@ module.exports = {
   sendFileMessage,  
   markAsRead,
   reportMessage,
+  suspendUserFromChat,
+  unsuspendUserFromChat,
 };

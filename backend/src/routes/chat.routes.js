@@ -9,6 +9,8 @@ const {
   markAsRead,
   reportMessage,
   sendFileMessage,
+  suspendUserFromChat,
+  unsuspendUserFromChat,
 } = require('../controllers/chat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 const uploadChat = require('../config/uploadChat');
@@ -36,5 +38,11 @@ router.patch('/messages/:messageId/read', authenticate, markAsRead);
 
 // POST signaler un message
 router.post('/messages/:messageId/report', authenticate, reportMessage);
+
+// POST suspendre un utilisateur du chat (ADMIN/PROFESSOR)
+router.post('/users/:userId/suspend', authenticate, authorize('ADMIN', 'PROFESSOR'), suspendUserFromChat);
+
+// POST lever la suspension
+router.post('/users/:userId/unsuspend', authenticate, authorize('ADMIN', 'PROFESSOR'), unsuspendUserFromChat);
 
 module.exports = router;
