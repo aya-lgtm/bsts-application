@@ -185,12 +185,49 @@ const reportMessage = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// POST envoyer un message avec fichier (image ou PDF)
+const sendFileMessage = async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    const senderId = req.user.id;
+    const file = req.file;
+
+    if (!file) return res.status(400).json({ message: 'Aucun fichier envoyé' });
+
+    const member = await ConversationMember.findOne({
+      where: { conversationId, userId: senderId },
+    });
+    if (!member) {
+      return res.status(403).json({ message: 'Accès refusé à cette conversation' });
+    }
+
+    const isImage = file.mimetype.startsWith('image/');
+    const fileUrl = `/uploads/chat/${isImage ? 'images' : 'pdfs'}/${file.filename}`;
+
+    const message = await Message.create({
+      conversationId,
+      senderId,
+      content: file.originalname,
+      fileUrl,
+      fileType: isImage ? 'IMAGE' : 'PDF',
+    });
+
+    const fullMessage = await Message.findByPk(message.id, {
+      include: [{ model: User, as: 'sender', attributes: ['id', 'nom', 'prenom', 'photo'] }],
+    });
+
+    return res.status(201).json({ message: fullMessage });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   createDirectConversation,
   createGroupConversation,
   getMyConversations,
   getMessages,
   sendMessage,
+  sendFileMessage,  
   markAsRead,
   reportMessage,
 };
