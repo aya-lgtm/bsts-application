@@ -28,7 +28,7 @@ const getQuizByChapter = async (req, res) => {
 const submitQuiz = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { reponses } = req.body; // { questionId: 'A', questionId2: 'B', ... }
+    const { reponses } = req.body;
     const userId = req.user.id;
 
     const quiz = await Quiz.findByPk(quizId, {
@@ -39,7 +39,6 @@ const submitQuiz = async (req, res) => {
       return res.status(404).json({ message: 'Quiz non trouvé' });
     }
 
-    // Calculer le score
     let bonnesReponses = 0;
     const corrections = {};
 
@@ -61,7 +60,6 @@ const submitQuiz = async (req, res) => {
     const score = Math.round((bonnesReponses / totalQuestions) * 100);
     const isPassed = score >= quiz.scoreMinimum;
 
-    // Sauvegarder le résultat
     await QuizResult.create({
       userId,
       quizId,
@@ -88,9 +86,16 @@ const submitQuiz = async (req, res) => {
 // POST créer un quiz (ADMIN/PROFESSOR)
 const createQuiz = async (req, res) => {
   try {
-    const { titre, chapterId, scoreMinimum } = req.body;
+    const { titre, chapterId, domaine, difficulte, scoreMinimum } = req.body;
 
-    const quiz = await Quiz.create({ titre, chapterId, scoreMinimum });
+    const quiz = await Quiz.create({
+      titre,
+      chapterId,
+      domaine: domaine ?? 'MATH',
+      difficulte: difficulte ?? 'MEDIUM',
+      scoreMinimum: scoreMinimum ?? 70,
+      createdBy: req.user.id,
+    });
 
     return res.status(201).json({ message: 'Quiz créé !', quiz });
   } catch (error) {
@@ -138,6 +143,7 @@ const getMyResults = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+
 // GET tous les quiz créés par le professeur connecté
 const getMyQuizzes = async (req, res) => {
   try {
@@ -153,6 +159,8 @@ const getMyQuizzes = async (req, res) => {
     const result = quizzes.map(q => ({
       id: q.id,
       titre: q.titre,
+      domaine: q.domaine ?? 'MATH',
+      difficulte: q.difficulte ?? 'MEDIUM',
       scoreMinimum: q.scoreMinimum,
       chapterTitre: q.Chapter?.titre ?? '—',
       totalQuestions: q.Questions?.length ?? 0,

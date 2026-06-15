@@ -12,6 +12,16 @@ const Quiz = sequelize.define('Quiz', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  domaine: {
+    type: DataTypes.ENUM('MATH', 'READING', 'WRITING'),
+    allowNull: true,
+    defaultValue: 'MATH',
+  },
+  difficulte: {
+    type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
+    allowNull: true,
+    defaultValue: 'MEDIUM',
+  },
   scoreMinimum: {
     type: DataTypes.INTEGER,
     defaultValue: 70,
