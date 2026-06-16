@@ -8,7 +8,7 @@ const {
   toggleSubjectActive,
 } = require('../controllers/course.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
-const upload = require('../config/upload');
+const { uploadCourse } = require('../config/cloudinary');
 
 // ── MATIÈRES ──
 router.get('/subjects', authenticate, getAllSubjects);
@@ -24,16 +24,15 @@ router.put('/chapters/:id', authenticate, authorize('ADMIN', 'PROFESSOR'), updat
 router.delete('/chapters/:id', authenticate, authorize('ADMIN', 'PROFESSOR'), deleteChapter);
 
 // ── UPLOAD (vidéo ou PDF pour les leçons) ──
-router.post('/upload', authenticate, authorize('ADMIN', 'PROFESSOR'), upload.single('file'), async (req, res) => {
+router.post('/upload', authenticate, authorize('ADMIN', 'PROFESSOR'), uploadCourse.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Aucun fichier envoyé' });
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.mimetype === 'application/pdf' ? 'pdfs' : 'videos'}/${req.file.filename}`;
-    return res.status(200).json({ message: 'Fichier uploadé !', fileUrl, filename: req.file.filename });
+    const fileUrl = req.file.path;
+    return res.status(200).json({ message: 'Fichier uploadé !', url: fileUrl, filename: req.file.filename });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 });
-
 // ── LEÇONS ──
 router.get('/chapters/:chapterId/lessons', authenticate, getLessonsByChapter);
 router.get('/lessons/bookmarks', authenticate, getBookmarkedLessons);

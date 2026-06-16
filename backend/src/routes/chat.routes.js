@@ -13,7 +13,7 @@ const {
   unsuspendUserFromChat,
 } = require('../controllers/chat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
-const uploadChat = require('../config/uploadChat');
+const { uploadChat } = require('../config/cloudinary');
 
 // POST créer une conversation directe
 router.post('/direct', authenticate, createDirectConversation);
