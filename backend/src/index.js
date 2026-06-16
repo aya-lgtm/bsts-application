@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const sequelize = require('./config/database');
 const { syncDatabase } = require('./models');
-const { connectRedis } = require('./config/redis');
+const { redisClient } = require('./config/redis');
 const { verifyAccessToken } = require('./utils/jwt.utils');
 
 const PORT = process.env.PORT || 3000;
@@ -57,11 +57,11 @@ sequelize.authenticate()
   .then(async () => {
     console.log('✅ Connexion PostgreSQL réussie !');
     await syncDatabase();
-    await connectRedis();
-    server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ BSTS Server running on port ${PORT}`);
-  console.log(`✅ Socket.IO actif !`);
-});
+    console.log('✅ Redis initialisé !');
+    server.listen(PORT, () => {
+      console.log(`✅ BSTS Server running on port ${PORT}`);
+      console.log(`✅ Socket.IO actif !`);
+    });
   })
   .catch((err) => {
     console.error('❌ Erreur de connexion :', err);
