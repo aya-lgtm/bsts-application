@@ -239,9 +239,30 @@ const getBookmarkedLessons = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// PATCH activer/désactiver une matière
+const toggleSubjectActive = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const subject = await Subject.findByPk(id);
+    if (!subject) {
+      return res.status(404).json({ message: 'Matière non trouvée' });
+    }
+
+    await subject.update({ isActive: !subject.isActive });
+
+    return res.status(200).json({
+      message: subject.isActive ? 'Matière activée !' : 'Matière désactivée !',
+      isActive: subject.isActive,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   getAllSubjects, createSubject, updateSubject, deleteSubject,
   getChaptersBySubject, createChapter, updateChapter, deleteChapter,
   getLessonsByChapter, getLessonById, createLesson, updateLesson, deleteLesson,
   updateProgress, getMyProgress, bookmarkLesson, getBookmarkedLessons,
+  toggleSubjectActive,
 };

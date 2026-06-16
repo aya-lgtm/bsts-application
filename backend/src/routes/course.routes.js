@@ -5,6 +5,7 @@ const {
   getChaptersBySubject, createChapter, updateChapter, deleteChapter,
   getLessonsByChapter, getLessonById, createLesson, updateLesson, deleteLesson,
   updateProgress, getMyProgress, bookmarkLesson, getBookmarkedLessons,
+  toggleSubjectActive,
 } = require('../controllers/course.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 const upload = require('../config/upload');
@@ -14,6 +15,7 @@ router.get('/subjects', authenticate, getAllSubjects);
 router.post('/subjects', authenticate, authorize('ADMIN', 'PROFESSOR'), createSubject);
 router.put('/subjects/:id', authenticate, authorize('ADMIN', 'PROFESSOR'), updateSubject);
 router.delete('/subjects/:id', authenticate, authorize('ADMIN', 'PROFESSOR'), deleteSubject);
+router.patch('/subjects/:id/toggle', authenticate, authorize('ADMIN', 'PROFESSOR'), toggleSubjectActive);
 
 // ── CHAPITRES ──
 router.get('/subjects/:subjectId/chapters', authenticate, getChaptersBySubject);
