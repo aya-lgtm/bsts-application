@@ -18,6 +18,8 @@ import PasswordResetSuccessScreen from './src/screens/PasswordResetSuccessScreen
 import RegisterOTPScreen from './src/screens/RegisterOTPScreen'
 import ParentNavigator from './src/screens/parent/ParentNavigator'
 import ProfessorNavigator from './src/screens/professor/ProfessorNavigator'
+import StudentNavigator from './src/screens/student/StudentNavigator'
+import { NavigationContainer } from '@react-navigation/native'
 
 // ─── Vérification au démarrage ─────────────────────────────────────────────
 const screens: Record<string, any> = {
@@ -31,6 +33,8 @@ const screens: Record<string, any> = {
   PasswordResetSuccessScreen,
   RegisterOTPScreen,
   ParentNavigator,
+  ProfessorNavigator,
+  StudentNavigator,
 }
 
 const invalidScreens = Object.entries(screens)
@@ -120,10 +124,9 @@ export default function App() {
         />
       )}
       {screen === 'home_student' && (
-        <View style={[styles.container, { backgroundColor: '#0D6B5E' }]}>
-          <Text style={styles.text}>🎓 Dashboard Étudiant</Text>
-        </View>
-      )}
+  <StudentNavigator onLogout={() => setScreen('login')} />
+)}
+
       {screen === 'home_admin' && (
         <View style={[styles.container, { backgroundColor: '#1a1a2e' }]}>
           <Text style={styles.text}>⚙️ Dashboard Admin</Text>

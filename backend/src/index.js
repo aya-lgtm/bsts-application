@@ -58,10 +58,10 @@ sequelize.authenticate()
     console.log('✅ Connexion PostgreSQL réussie !');
     await syncDatabase();
     await connectRedis();
-    server.listen(PORT, () => {
-      console.log(`✅ BSTS Server running on port ${PORT}`);
-      console.log(`✅ Socket.IO actif !`);
-    });
+    server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ BSTS Server running on port ${PORT}`);
+  console.log(`✅ Socket.IO actif !`);
+});
   })
   .catch((err) => {
     console.error('❌ Erreur de connexion :', err);

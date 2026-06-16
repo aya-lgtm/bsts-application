@@ -262,16 +262,14 @@ export default function LoginScreen({
     }
     setLoading(true)
     setError('')
-    try {
+   try {
   const { user, accessToken, refreshToken } = await loginUser(loginEmail, password)
+  // loginUser a déjà sauvegardé accessToken, refreshToken, user globalement
 
-  // Sauvegarder user ET token par email
+  // Sauvegarder par email pour la bio
   await SecureStore.setItemAsync(`user_${emailToKey(loginEmail)}`, JSON.stringify(user))
-await SecureStore.setItemAsync(`token_${emailToKey(loginEmail)}`, accessToken)
-await SecureStore.setItemAsync(`refresh_${emailToKey(loginEmail)}`, refreshToken) // ← nouveau
-await SecureStore.setItemAsync('user', JSON.stringify(user))
-await SecureStore.setItemAsync('accessToken', accessToken)
-await SecureStore.setItemAsync('refreshToken', refreshToken)
+  await SecureStore.setItemAsync(`token_${emailToKey(loginEmail)}`, accessToken)
+  await SecureStore.setItemAsync(`refresh_${emailToKey(loginEmail)}`, refreshToken)
 
   if (rememberMe || activeAccount) {
     const acc: SavedAccount = {
@@ -286,7 +284,8 @@ await SecureStore.setItemAsync('refreshToken', refreshToken)
 
   onFinish(user.role)
 } catch (e: any) {
-  setError(e?.response?.data?.message || 'Email ou mot de passe incorrect')
+  console.log('Login error:', e?.message, e?.response?.data)
+  setError(e?.response?.data?.message || e?.message || 'Erreur de connexion')
 } finally {
   setLoading(false)
 }
