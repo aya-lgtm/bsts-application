@@ -23,6 +23,16 @@ const Subject = sequelize.define('Subject', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  niveau: {
+    type: DataTypes.ENUM('Standard', 'Honors', 'AP'),
+    allowNull: true,
+    defaultValue: 'Standard',
+  },
+  categorie: {
+    type: DataTypes.ENUM('Maths', 'Sciences', 'Anglais', 'Histoire/Géo', 'Sciences Sociales', 'Autre'),
+    allowNull: true,
+    defaultValue: 'Autre',
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
