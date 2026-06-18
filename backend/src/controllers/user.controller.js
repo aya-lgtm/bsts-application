@@ -88,13 +88,16 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// POST créer un utilisateur (ADMIN seulement — uniquement PROFESSOR)
 const createUserByAdmin = async (req, res) => {
   try {
-    const { nom, prenom, email, password, role } = req.body;
+    const { nom, prenom, email, password, role, matieres } = req.body;
 
-    const allowedRoles = ['STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN'];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: 'Rôle invalide' });
+    // Admin peut seulement créer des PROFESSOR
+    if (role !== 'PROFESSOR') {
+      return res.status(403).json({
+        message: 'L\'admin peut uniquement créer des comptes PROFESSOR. Les étudiants et parents s\'inscrivent eux-mêmes.',
+      });
     }
 
     const existingUser = await User.findOne({ where: { email } });
@@ -109,26 +112,27 @@ const createUserByAdmin = async (req, res) => {
       prenom,
       email,
       password: hashedPassword,
-      role,
+      role: 'PROFESSOR',
+      matieres: matieres || [],
       isActive: true,
       isVerified: true,
     });
 
     return res.status(201).json({
-      message: 'Utilisateur créé avec succès !',
+      message: 'Compte professeur créé avec succès !',
       user: {
         id: user.id,
         nom: user.nom,
         prenom: user.prenom,
         email: user.email,
         role: user.role,
+        matieres: user.matieres,
       },
     });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 // GET mes enfants (PARENT seulement)
 const getMyChildren = async (req, res) => {
   
