@@ -672,7 +672,11 @@ const saveFCMToken = async (req, res) => {
 // GET étudiants qui ont fait les quiz du professeur connecté
 const getProfessorStudents = async (req, res) => {
   try {
-    const { Quiz, QuizResult, SATSession, Gamification } = require('../models');
+    const {
+      Quiz, QuizResult, SATSession, Gamification,
+      Message, Conversation, ConversationMember,
+    } = require('../models');
+    const { Op } = require('sequelize');
 
     const myQuizzes = await Quiz.findAll({ where: { createdBy: req.user.id } });
     const quizIds = myQuizzes.map(q => q.id);
@@ -683,8 +687,14 @@ const getProfessorStudents = async (req, res) => {
 
     const results = await QuizResult.findAll({
       where: { quizId: quizIds },
-      include: [{ model: User, attributes: ['id', 'nom', 'prenom', 'email', 'matieres'] }],
+      include: [{ model: User, attributes: ['id', 'nom', 'prenom', 'email', 'photo', 'matieres'] }],
     });
+
+    const profConversations = await ConversationMember.findAll({
+      where: { userId: req.user.id },
+      attributes: ['conversationId'],
+    });
+    const profConvIds = profConversations.map(c => c.conversationId);
 
     const seen = new Set();
     const students = [];
@@ -693,33 +703,76 @@ const getProfessorStudents = async (req, res) => {
       if (!r.User || seen.has(r.User.id)) continue;
       seen.add(r.User.id);
 
+      const studentId = r.User.id;
+
       const bestSAT = await SATSession.findOne({
-        where: { userId: r.User.id, isCompleted: true },
+        where: { userId: studentId, isCompleted: true },
         order: [['scoreSAT', 'DESC']],
-        attributes: ['scoreSAT'],
+        attributes: ['scoreSAT', 'createdAt'],
       });
 
       const gamif = await Gamification.findOne({
-        where: { userId: r.User.id },
+        where: { userId: studentId },
         attributes: ['streak', 'niveau', 'points'],
       });
 
-      const studentResults = results.filter(x => x.userId === r.User.id);
+      const studentResults = results.filter(x => x.userId === studentId);
       const avgScore = studentResults.length
         ? Math.round(studentResults.reduce((a, x) => a + x.score, 0) / studentResults.length)
         : 0;
+
+      const lastQuiz = studentResults.reduce((latest, x) => {
+        if (!latest) return x.createdAt;
+        return new Date(x.createdAt) > new Date(latest) ? x.createdAt : latest;
+      }, null);
+
+      const lastSATDate = bestSAT?.createdAt ?? null;
+      let lastActivity = null;
+      if (lastQuiz && lastSATDate) {
+        lastActivity = new Date(lastQuiz) > new Date(lastSATDate) ? lastQuiz : lastSATDate;
+      } else {
+        lastActivity = lastQuiz || lastSATDate;
+      }
+
+      let unreadMessages = 0;
+      if (profConvIds.length > 0) {
+        const sharedConvMembers = await ConversationMember.findAll({
+          where: {
+            userId: studentId,
+            conversationId: { [Op.in]: profConvIds },
+          },
+          attributes: ['conversationId'],
+        });
+        const sharedConvIds = sharedConvMembers.map(c => c.conversationId);
+
+        if (sharedConvIds.length > 0) {
+          unreadMessages = await Message.count({
+            where: {
+              conversationId: { [Op.in]: sharedConvIds },
+              senderId: studentId,
+              isRead: false,
+            },
+          });
+        }
+      }
 
       students.push({
         id: r.User.id,
         nom: r.User.nom,
         prenom: r.User.prenom,
         email: r.User.email,
+        avatar: r.User.photo ?? null,
+        matieres: r.User.matieres ?? [],
         scoreSAT: bestSAT?.scoreSAT ?? 0,
         avgQuizScore: avgScore,
         streak: gamif?.streak ?? 0,
         niveau: gamif?.niveau ?? 'STARTER',
+        lastActivity: lastActivity ?? null,
+        unreadMessages: unreadMessages,
       });
     }
+
+    students.sort((a, b) => b.scoreSAT - a.scoreSAT);
 
     return res.status(200).json({ students });
   } catch (error) {

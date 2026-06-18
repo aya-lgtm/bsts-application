@@ -1,6 +1,5 @@
-const { SATQuestion, SATSession, Gamification, User } = require('../models');
+const { SATQuestion, SATSession, Gamification, User, Quiz, QuizResult } = require('../models');
 const { Op } = require('sequelize');
-
 // GET questions SAT avec filtres
 const getQuestions = async (req, res) => {
   try {
@@ -206,23 +205,17 @@ const getSATProgress = async (req, res) => {
       });
     }
 
-    // Score actuel = dernier score SAT
     const lastSession = sessions[sessions.length - 1];
     const currentScore = lastSession.scoreSAT || 0;
-
-    // Progression globale
     const globalProgress = Math.round((currentScore / 1600) * 100);
 
-    // Progression mensuelle
     const lastMonth = new Date();
     lastMonth.setMonth(lastMonth.getMonth() - 1);
     const lastMonthSessions = sessions.filter(s => new Date(s.createdAt) >= lastMonth);
-    const monthlyProgress = lastMonthSessions.length > 0
-      ? Math.round(((currentScore - (lastMonthSessions[0].scoreSAT || 0)) / 1600) * 100)
-      : 0;
+    const firstMonthScore = lastMonthSessions.length > 0 ? (lastMonthSessions[0].scoreSAT || 0) : currentScore;
+    const monthlyProgress = Math.round(((currentScore - firstMonthScore) / 1600) * 100);
 
-    // Historique des scores
-    const satHistory = sessions.map(s => ({
+    const satHistory = sessions.slice(-20).map(s => ({
       date: new Date(s.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
       score: s.scoreSAT || 0,
     }));
@@ -244,39 +237,52 @@ const getSATSections = async (req, res) => {
   try {
     const { userId } = req.params;
 
+    const emptySections = [
+      { name: 'Math', score: 0, maxScore: 800, color: '#3B82F6' },
+      { name: 'Reading & Writing', score: 0, maxScore: 800, color: '#7C3AED' },
+      { name: 'Evidence-Based Reading', score: 0, maxScore: 400, color: '#F97316' },
+      { name: 'Math Advanced', score: 0, maxScore: 400, color: '#0D9488' },
+    ];
+
     const sessions = await SATSession.findAll({
       where: { userId, isCompleted: true },
       order: [['createdAt', 'DESC']],
-      limit: 5,
+      limit: 10,
     });
 
     if (sessions.length === 0) {
-      return res.status(200).json({
-        sections: [
-          { name: 'Math', score: 0, maxScore: 800, color: '#0D6B5E' },
-          { name: 'Reading & Writing', score: 0, maxScore: 800, color: '#D4A017' },
-          { name: 'Evidence-Based Reading', score: 0, maxScore: 400, color: '#4A90E2' },
-          { name: 'Math Advanced', score: 0, maxScore: 400, color: '#E24A4A' },
-        ],
-      });
+      return res.status(200).json({ sections: emptySections });
     }
 
-    // Calculer les scores moyens par domaine
-    const mathSessions = sessions.filter(s => s.domaine === 'MATH' || s.domaine === 'ALL');
-    const readingSessions = sessions.filter(s => s.domaine === 'READING' || s.domaine === 'ALL');
-    const writingSessions = sessions.filter(s => s.domaine === 'WRITING' || s.domaine === 'ALL');
-
-    const avgScore = (arr) => {
-      if (arr.length === 0) return 0;
-      return Math.round(arr.reduce((sum, s) => sum + (s.scoreSAT || 0), 0) / arr.length / 2);
+    const avg = (arr) => {
+      const valid = arr.filter(s => s.scoreSAT != null && s.scoreSAT > 0);
+      if (valid.length === 0) return 0;
+      return Math.round(valid.reduce((sum, s) => sum + s.scoreSAT, 0) / valid.length);
     };
+
+    const mathScore = (() => {
+      const dedicated = sessions.filter(s => s.domaine === 'MATH');
+      if (dedicated.length > 0) return Math.min(avg(dedicated), 800);
+      const allSess = sessions.filter(s => s.domaine === 'ALL');
+      return allSess.length > 0 ? Math.min(Math.round(avg(allSess) / 2), 800) : 0;
+    })();
+
+    const rwScore = (() => {
+      const dedicated = sessions.filter(s => ['READING', 'WRITING'].includes(s.domaine));
+      if (dedicated.length > 0) return Math.min(avg(dedicated), 800);
+      const allSess = sessions.filter(s => s.domaine === 'ALL');
+      return allSess.length > 0 ? Math.min(Math.round(avg(allSess) / 2), 800) : 0;
+    })();
+
+    const ebrScore = Math.min(Math.round(rwScore * 0.5), 400);
+    const mathAdvScore = Math.min(Math.round(mathScore * 0.5), 400);
 
     return res.status(200).json({
       sections: [
-        { name: 'Math', score: avgScore(mathSessions), maxScore: 800, color: '#0D6B5E' },
-        { name: 'Reading & Writing', score: avgScore(readingSessions), maxScore: 800, color: '#D4A017' },
-        { name: 'Evidence-Based Reading', score: avgScore(readingSessions), maxScore: 400, color: '#4A90E2' },
-        { name: 'Math Advanced', score: avgScore(mathSessions), maxScore: 400, color: '#E24A4A' },
+        { name: 'Math', score: mathScore, maxScore: 800, color: '#3B82F6' },
+        { name: 'Reading & Writing', score: rwScore, maxScore: 800, color: '#7C3AED' },
+        { name: 'Evidence-Based Reading', score: ebrScore, maxScore: 400, color: '#F97316' },
+        { name: 'Math Advanced', score: mathAdvScore, maxScore: 400, color: '#0D9488' },
       ],
     });
   } catch (error) {
