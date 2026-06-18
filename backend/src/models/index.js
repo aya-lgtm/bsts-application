@@ -20,6 +20,8 @@ const Payment = require('./Payment');
 const PromoCode = require('./PromoCode');
 const Notification = require('./Notification');
 const LinkRequest = require('./LinkRequest');
+const CollegeStudent = require('./CollegeStudent');
+const Consultation = require('./Consultation');
 
 const syncDatabase = async () => {
   try {
@@ -54,4 +56,6 @@ module.exports = {
   PromoCode,
   Notification,
   LinkRequest,
+  CollegeStudent,
+  Consultation,
 };
