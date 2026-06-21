@@ -9,11 +9,15 @@ const {
   getSATProgress,
   getSATSections,
   getParentSATProgress,
+  getMistakes,
 } = require('../controllers/sat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
 // GET questions SAT avec filtres
 router.get('/questions', authenticate, getQuestions);
+
+// GET questions ratées (mode erreurs)
+router.get('/mistakes', authenticate, getMistakes);
 
 // POST démarrer une session SAT
 router.post('/sessions/start', authenticate, startSession);

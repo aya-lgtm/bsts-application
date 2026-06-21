@@ -12,7 +12,7 @@ const getQuestions = async (req, res) => {
     const questions = await SATQuestion.findAll({
       where,
       limit: parseInt(limit),
-      order: sequelize.literal('random()'),
+     order: SATQuestion.sequelize.literal('random()'),
       attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
     });
 
@@ -35,16 +35,54 @@ const startSession = async (req, res) => {
       totalQuestions: totalQuestions || 10,
     });
 
-    // Récupérer les questions selon le mode
-    const where = { isActive: true };
-    if (domaine && domaine !== 'ALL') where.domaine = domaine;
+    let questions;
 
-    const questions = await SATQuestion.findAll({
-      where,
-      limit: totalQuestions || 10,
-      order: SATQuestion.sequelize.literal('random()'),
-      attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
-    });
+    if (mode === 'MISTAKES') {
+      // Récupérer les questions ratées précédemment
+      const pastSessions = await SATSession.findAll({
+        where: { userId, isCompleted: true },
+        order: [['createdAt', 'DESC']],
+      });
+
+      const mistakeIds = new Set();
+
+      for (const pastSession of pastSessions) {
+        if (!pastSession.reponses) continue;
+        const reponses = typeof pastSession.reponses === 'string'
+          ? JSON.parse(pastSession.reponses)
+          : pastSession.reponses;
+
+        for (const [questionId, correction] of Object.entries(reponses)) {
+          if (!correction.estCorrecte) {
+            mistakeIds.add(questionId);
+          }
+        }
+      }
+
+      if (mistakeIds.size === 0) {
+        return res.status(200).json({
+          session,
+          questions: [],
+          message: 'Aucune erreur précédente trouvée. Faites quelques quiz d\'abord !',
+        });
+      }
+
+      questions = await SATQuestion.findAll({
+        where: { id: { [Op.in]: Array.from(mistakeIds) }, isActive: true },
+        limit: totalQuestions || 10,
+        attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+      });
+    } else {
+      const where = { isActive: true };
+      if (domaine && domaine !== 'ALL') where.domaine = domaine;
+
+      questions = await SATQuestion.findAll({
+        where,
+        limit: totalQuestions || 10,
+        order: SATQuestion.sequelize.literal('random()'),
+        attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+      });
+    }
 
     return res.status(201).json({ session, questions });
   } catch (error) {
@@ -364,7 +402,6 @@ const getMistakes = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Récupérer toutes les sessions complétées
     const sessions = await SATSession.findAll({
       where: { userId, isCompleted: true },
       order: [['createdAt', 'DESC']],
@@ -374,7 +411,6 @@ const getMistakes = async (req, res) => {
       return res.status(200).json({ mistakes: [], total: 0 });
     }
 
-    // Collecter toutes les réponses incorrectes
     const mistakes = [];
 
     for (const session of sessions) {
@@ -384,22 +420,26 @@ const getMistakes = async (req, res) => {
         ? JSON.parse(session.reponses)
         : session.reponses;
 
-      for (const reponse of reponses) {
-        if (!reponse.isCorrect) {
-          const question = await SATQuestion.findByPk(reponse.questionId);
+      // reponses est un objet { questionId: { reponseEleve, bonneReponse, estCorrecte, explication } }
+      for (const [questionId, correction] of Object.entries(reponses)) {
+        if (!correction.estCorrecte) {
+          const question = await SATQuestion.findByPk(questionId);
           if (question) {
-            // Éviter les doublons
             const alreadyAdded = mistakes.find(m => m.id === question.id);
             if (!alreadyAdded) {
               mistakes.push({
                 id: question.id,
-                question: question.question,
-                options: question.options,
-                correctAnswer: question.correctAnswer,
-                explication: question.explication,
+                enonce: question.enonce,
+                choixA: question.choixA,
+                choixB: question.choixB,
+                choixC: question.choixC,
+                choixD: question.choixD,
+                bonneReponse: question.bonneReponse,
+                explicationCorrecte: question.explicationCorrecte,
+                explicationIncorrecte: question.explicationIncorrecte,
                 domaine: question.domaine,
                 difficulte: question.difficulte,
-                userAnswer: reponse.reponse,
+                userAnswer: correction.reponseEleve,
                 sessionDate: session.createdAt,
               });
             }
