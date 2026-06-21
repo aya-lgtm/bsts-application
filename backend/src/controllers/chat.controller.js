@@ -80,6 +80,7 @@ const createGroupConversation = async (req, res) => {
 };
 
 // GET mes conversations
+// GET mes conversations
 const getMyConversations = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -97,7 +98,56 @@ const getMyConversations = async (req, res) => {
       }],
     });
 
-    const conversations = members.map(m => m.Conversation);
+    const conversations = await Promise.all(members.map(async (m) => {
+      const conv = m.Conversation;
+      const lastMsg = conv.Messages && conv.Messages.length > 0 ? conv.Messages[0] : null;
+
+      // Compter les messages non lus envoyés par l'autre personne
+      const unreadCount = await Message.count({
+        where: {
+          conversationId: conv.id,
+          senderId: { [require('sequelize').Op.ne]: userId },
+          isRead: false,
+        },
+      });
+
+      let otherMember = null;
+
+      if (conv.type === 'DIRECT') {
+        const otherConvMember = await ConversationMember.findOne({
+          where: {
+            conversationId: conv.id,
+            userId: { [require('sequelize').Op.ne]: userId },
+          },
+          include: [{ model: User, attributes: ['id', 'nom', 'prenom', 'photo', 'role', 'matieres'] }],
+        });
+
+        if (otherConvMember && otherConvMember.User) {
+          otherMember = {
+            id: otherConvMember.User.id,
+            nom: otherConvMember.User.nom,
+            prenom: otherConvMember.User.prenom,
+            photo: otherConvMember.User.photo,
+            role: otherConvMember.User.role,
+            matiere: otherConvMember.User.matieres?.[0] ?? null,
+          };
+        }
+      }
+
+      return {
+        id: conv.id,
+        type: conv.type,
+        nom: conv.nom ?? null,
+        otherMember,
+        lastMessage: lastMsg ? {
+          content: lastMsg.content,
+          fileType: lastMsg.fileType,
+          createdAt: lastMsg.createdAt,
+          senderId: lastMsg.senderId,
+        } : null,
+        unreadCount,
+      };
+    }));
 
     return res.status(200).json({ conversations });
   } catch (error) {
@@ -286,11 +336,33 @@ const unsuspendUserFromChat = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET liste des professeurs disponibles pour démarrer une conversation
+const getAvailableProfessors = async (req, res) => {
+  try {
+    const professors = await User.findAll({
+      where: { role: 'PROFESSOR', isActive: true },
+      attributes: ['id', 'nom', 'prenom', 'photo', 'matieres'],
+    });
+
+    const result = professors.map(p => ({
+      id: p.id,
+      nom: p.nom,
+      prenom: p.prenom,
+      photo: p.photo,
+      matiere: p.matieres?.[0] ?? null,
+    }));
+
+    return res.status(200).json({ professors: result });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   createDirectConversation,
   createGroupConversation,
   getMyConversations,
   getMessages,
+  getAvailableProfessors,
   sendMessage,
   sendFileMessage,  
   markAsRead,

@@ -11,12 +11,15 @@ const {
   sendFileMessage,
   suspendUserFromChat,
   unsuspendUserFromChat,
+  getAvailableProfessors,
 } = require('../controllers/chat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 const { uploadChat } = require('../config/cloudinary');
 
 // POST créer une conversation directe
 router.post('/direct', authenticate, createDirectConversation);
+// GET liste des professeurs disponibles
+router.get('/professors', authenticate, getAvailableProfessors);
 
 // POST créer un groupe (PROFESSOR seulement)
 router.post('/group', authenticate, authorize('PROFESSOR', 'ADMIN'), createGroupConversation);
