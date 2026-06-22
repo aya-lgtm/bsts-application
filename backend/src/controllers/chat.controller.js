@@ -357,6 +357,31 @@ const getAvailableProfessors = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// PATCH marquer tous les messages d'une conversation comme lus
+const markAllAsRead = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    const member = await ConversationMember.findOne({ where: { userId, conversationId } });
+    if (!member) return res.status(403).json({ message: 'Accès refusé' });
+
+    await Message.update(
+      { isRead: true },
+      {
+        where: {
+          conversationId,
+          senderId: { [require('sequelize').Op.ne]: userId },
+          isRead: false,
+        },
+      }
+    );
+
+    return res.status(200).json({ message: 'Tous les messages marqués comme lus' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   createDirectConversation,
   createGroupConversation,
@@ -366,6 +391,7 @@ module.exports = {
   sendMessage,
   sendFileMessage,  
   markAsRead,
+  markAllAsRead,
   reportMessage,
   suspendUserFromChat,
   unsuspendUserFromChat,

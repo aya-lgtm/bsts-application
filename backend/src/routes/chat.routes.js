@@ -7,6 +7,7 @@ const {
   getMessages,
   sendMessage,
   markAsRead,
+  markAllAsRead,
   reportMessage,
   sendFileMessage,
   suspendUserFromChat,
@@ -16,10 +17,11 @@ const {
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 const { uploadChat } = require('../config/cloudinary');
 
-// POST créer une conversation directe
-router.post('/direct', authenticate, createDirectConversation);
 // GET liste des professeurs disponibles
 router.get('/professors', authenticate, getAvailableProfessors);
+
+// POST créer une conversation directe
+router.post('/direct', authenticate, createDirectConversation);
 
 // POST créer un groupe (PROFESSOR seulement)
 router.post('/group', authenticate, authorize('PROFESSOR', 'ADMIN'), createGroupConversation);
@@ -29,6 +31,9 @@ router.get('/', authenticate, getMyConversations);
 
 // GET messages d'une conversation
 router.get('/:conversationId/messages', authenticate, getMessages);
+
+// PATCH marquer tous les messages comme lus
+router.patch('/:conversationId/read-all', authenticate, markAllAsRead);
 
 // POST envoyer un message
 router.post('/messages', authenticate, sendMessage);
