@@ -13,6 +13,10 @@ const ConversationMember = sequelize.define('ConversationMember', {
     type: DataTypes.ENUM('MEMBER', 'ADMIN'),
     defaultValue: 'MEMBER',
   },
+  isArchived: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
 }, {
   tableName: 'conversation_members',
   timestamps: true,

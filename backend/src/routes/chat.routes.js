@@ -13,6 +13,12 @@ const {
   suspendUserFromChat,
   unsuspendUserFromChat,
   getAvailableProfessors,
+  deleteMessage,
+  clearConversation,
+  reportUser,
+  unreportUser,
+  archiveConversation,
+  deleteConversation,
 } = require('../controllers/chat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 const { uploadChat } = require('../config/cloudinary');
@@ -35,17 +41,33 @@ router.get('/:conversationId/messages', authenticate, getMessages);
 // PATCH marquer tous les messages comme lus
 router.patch('/:conversationId/read-all', authenticate, markAllAsRead);
 
+// PATCH archiver/désarchiver une conversation
+router.patch('/:conversationId/archive', authenticate, archiveConversation);
+
+// DELETE vider une conversation
+router.delete('/:conversationId/clear', authenticate, clearConversation);
+
+// DELETE supprimer une conversation (quitter)
+router.delete('/:conversationId', authenticate, deleteConversation);
+
 // POST envoyer un message
 router.post('/messages', authenticate, sendMessage);
 
-// POST envoyer un fichier (image/PDF)
+// POST envoyer un fichier (image/PDF/vidéo/audio)
 router.post('/messages/upload', authenticate, uploadChat.single('file'), sendFileMessage);
 
 // PATCH marquer comme lu
 router.patch('/messages/:messageId/read', authenticate, markAsRead);
 
+// DELETE supprimer un message
+router.delete('/messages/:messageId', authenticate, deleteMessage);
+
 // POST signaler un message
 router.post('/messages/:messageId/report', authenticate, reportMessage);
+
+// POST signaler / désignaler un utilisateur
+router.post('/users/:userId/report', authenticate, reportUser);
+router.post('/users/:userId/unreport', authenticate, unreportUser);
 
 // POST suspendre un utilisateur du chat (ADMIN/PROFESSOR)
 router.post('/users/:userId/suspend', authenticate, authorize('ADMIN', 'PROFESSOR'), suspendUserFromChat);

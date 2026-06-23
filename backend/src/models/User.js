@@ -75,9 +75,13 @@ chatSuspendedUntil: {
     type: DataTypes.STRING,
     allowNull: true,
   },
-  otpExpires: {
+otpExpires: {
     type: DataTypes.DATE,
     allowNull: true,
+  },
+  isReported: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
   },
 }, {
   tableName: 'users',

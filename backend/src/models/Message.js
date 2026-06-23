@@ -17,10 +17,18 @@ const Message = sequelize.define('Message', {
     type: DataTypes.STRING,
     allowNull: true,
   },
-  fileType: {
-    type: DataTypes.ENUM('TEXT', 'IMAGE', 'PDF'),
-    defaultValue: 'TEXT',
-  },
+ fileType: {
+  type: DataTypes.ENUM('TEXT', 'IMAGE', 'PDF', 'AUDIO', 'VIDEO'),
+  defaultValue: 'TEXT',
+},
+fileSize: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+},
+fileDuration: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+},
   isRead: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,

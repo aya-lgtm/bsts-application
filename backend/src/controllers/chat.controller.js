@@ -134,7 +134,7 @@ const getMyConversations = async (req, res) => {
         }
       }
 
-      return {
+     return {
         id: conv.id,
         type: conv.type,
         nom: conv.nom ?? null,
@@ -146,6 +146,7 @@ const getMyConversations = async (req, res) => {
           senderId: lastMsg.senderId,
         } : null,
         unreadCount,
+        isArchived: m.isArchived ?? false,
       };
     }));
 
@@ -276,15 +277,23 @@ const sendFileMessage = async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à cette conversation' });
     }
 
-    const isImage = file.mimetype.startsWith('image/');
+    // Déterminer le type de fichier
+    let fileType = 'TEXT';
+    if (file.mimetype.startsWith('image/')) fileType = 'IMAGE';
+    else if (file.mimetype.startsWith('video/')) fileType = 'VIDEO';
+    else if (file.mimetype.startsWith('audio/')) fileType = 'AUDIO';
+    else if (file.mimetype === 'application/pdf') fileType = 'PDF';
+
     const fileUrl = file.path;
+    const fileSize = file.size ?? null;
 
     const message = await Message.create({
       conversationId,
       senderId,
       content: file.originalname,
       fileUrl,
-      fileType: isImage ? 'IMAGE' : 'PDF',
+      fileType,
+      fileSize,
     });
 
     const fullMessage = await Message.findByPk(message.id, {
@@ -401,17 +410,128 @@ const markAllAsRead = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// DELETE supprimer un message
+const deleteMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user.id;
+
+    const message = await Message.findByPk(messageId);
+    if (!message) return res.status(404).json({ message: 'Message non trouvé' });
+
+    if (message.senderId !== userId) {
+      return res.status(403).json({ message: 'Vous ne pouvez supprimer que vos propres messages' });
+    }
+
+    const conversationId = message.conversationId;
+    await message.destroy();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conv:${conversationId}`).emit('message_deleted', { messageId, conversationId });
+    }
+
+    return res.status(200).json({ message: 'Message supprimé !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// DELETE vider une conversation (mes messages uniquement)
+const clearConversation = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    const member = await ConversationMember.findOne({ where: { userId, conversationId } });
+    if (!member) return res.status(403).json({ message: 'Accès refusé' });
+
+    await Message.destroy({ where: { conversationId, senderId: userId } });
+
+    return res.status(200).json({ message: 'Conversation vidée !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST signaler un utilisateur
+const reportUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const targetUser = await User.findByPk(userId);
+    if (!targetUser) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    await targetUser.update({ isReported: true });
+    return res.status(200).json({ message: 'Utilisateur signalé !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST désignaler un utilisateur
+const unreportUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const targetUser = await User.findByPk(userId);
+    if (!targetUser) return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    await targetUser.update({ isReported: false });
+    return res.status(200).json({ message: 'Signalement retiré !' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+// PATCH archiver/désarchiver une conversation
+const archiveConversation = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+    const { archived } = req.body;
+
+    const member = await ConversationMember.findOne({ where: { userId, conversationId } });
+    if (!member) return res.status(403).json({ message: 'Accès refusé' });
+
+    await member.update({ isArchived: archived });
+
+    return res.status(200).json({
+      message: archived ? 'Conversation archivée' : 'Conversation désarchivée',
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// DELETE supprimer une conversation (quitter)
+const deleteConversation = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    const member = await ConversationMember.findOne({ where: { userId, conversationId } });
+    if (!member) return res.status(403).json({ message: 'Accès refusé' });
+
+    await member.destroy();
+
+    return res.status(200).json({ message: 'Conversation supprimée' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   createDirectConversation,
   createGroupConversation,
   getMyConversations,
   getMessages,
-  getAvailableProfessors,
   sendMessage,
-  sendFileMessage,  
   markAsRead,
   markAllAsRead,
   reportMessage,
+  sendFileMessage,
   suspendUserFromChat,
   unsuspendUserFromChat,
+  getAvailableProfessors,
+  deleteMessage,
+  clearConversation,
+  reportUser,
+  unreportUser,
+  archiveConversation,
+  deleteConversation,
 };

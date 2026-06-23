@@ -21,14 +21,22 @@ const courseStorage = new CloudinaryStorage({
   },
 });
 
-// Storage pour les images/PDFs du chat
+// Storage pour les fichiers du chat (images/PDFs/vidéos/audios)
 const chatStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
     const isPDF = file.mimetype === 'application/pdf';
+    const isVideo = file.mimetype.startsWith('video/');
+    const isAudio = file.mimetype.startsWith('audio/');
+
+    let resource_type = 'image';
+    if (isPDF) resource_type = 'raw';
+    else if (isVideo) resource_type = 'video';
+    else if (isAudio) resource_type = 'video'; // Cloudinary gère l'audio comme vidéo
+
     return {
       folder: 'bsts/chat',
-      resource_type: isPDF ? 'raw' : 'image',
+      resource_type,
     };
   },
 });
@@ -40,7 +48,16 @@ const uploadCourse = multer({
 
 const uploadChat = multer({
   storage: chatStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 Mo
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/quicktime', 'video/avi',
+      'audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-m4a',
+      'application/pdf',
+    ];
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Type non autorisé'));
+  },
 });
 
 module.exports = { cloudinary, uploadCourse, uploadChat };
