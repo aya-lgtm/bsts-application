@@ -8,15 +8,19 @@ const { redisClient } = require('./config/redis');
 const { verifyAccessToken } = require('./utils/jwt.utils');
 
 const PORT = process.env.PORT || 3000;
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   },
 });
+
+// Rendre io accessible dans les controllers
+app.set('io', io);
+
+const onlineUsers = new Set();
 
 io.use((socket, next) => {
   try {
@@ -31,25 +35,36 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  console.log(`✅ User connecté : ${socket.user.id}`);
-  socket.join(`user_${socket.user.id}`);
+  const userId = socket.user.id;
+  console.log(`✅ User connecté : ${userId}`);
 
-  socket.on('join_conversation', (conversationId) => {
-    socket.join(`conversation_${conversationId}`);
+  // Ajouter à la liste des users en ligne
+  onlineUsers.add(userId);
+  io.emit('user_online', userId);
+  socket.emit('online_users', [...onlineUsers]);
+
+  socket.join(`user_${userId}`);
+
+  // Rejoindre une conversation
+  socket.on('join_conversation', ({ conversationId }) => {
+    socket.join(`conv:${conversationId}`);
   });
 
-  socket.on('send_message', (data) => {
-    const { conversationId, content } = data;
-    io.to(`conversation_${conversationId}`).emit('new_message', {
-      senderId: socket.user.id,
-      conversationId,
-      content,
-      createdAt: new Date(),
-    });
+  // Quitter une conversation
+  socket.on('leave_conversation', ({ conversationId }) => {
+    socket.leave(`conv:${conversationId}`);
   });
 
+  // Typing indicator
+  socket.on('typing', ({ conversationId }) => {
+    socket.to(`conv:${conversationId}`).emit('typing', { userId, conversationId });
+  });
+
+  // Déconnexion
   socket.on('disconnect', () => {
-    console.log(`❌ User déconnecté : ${socket.user.id}`);
+    console.log(`❌ User déconnecté : ${userId}`);
+    onlineUsers.delete(userId);
+    io.emit('user_offline', userId);
   });
 });
 

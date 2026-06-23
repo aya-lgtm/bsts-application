@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP } = require('../controllers/auth.controller');
+const { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP, getMe } = require('../controllers/auth.controller');
 const { loginLimiter, registerLimiter, forgotPasswordLimiter } = require('../middlewares/rateLimit.middleware');
+
 
 /**
  * @swagger
@@ -202,5 +203,7 @@ router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
  */
 router.post('/reset-password', resetPassword);
 router.post('/verify-reset-otp', verifyResetOTP);
-
+// GET utilisateur connecté
+const { authenticate } = require('../middlewares/auth.middleware');
+router.get('/me', authenticate, getMe);
 module.exports = router;

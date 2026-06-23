@@ -285,5 +285,19 @@ const verifyResetOTP = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error', error: error.message })
   }
 }
+// GET utilisateur connecté
+const getMe = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: ['id', 'nom', 'prenom', 'email', 'role', 'photo', 'matieres'],
+    });
+    if (!user) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé' });
+    }
+    return res.status(200).json({ user });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
-module.exports = { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP };
+module.exports = { register, login, logout, refreshToken, forgotPassword, resetPassword, verifyOTP, resendOTP, verifyResetOTP, getMe };

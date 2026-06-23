@@ -189,7 +189,6 @@ const sendMessage = async (req, res) => {
     const { conversationId, content } = req.body;
     const senderId = req.user.id;
 
-    // Vérifier si l'utilisateur est suspendu
     const sender = await User.findByPk(senderId);
     if (sender.chatSuspendedUntil && new Date(sender.chatSuspendedUntil) > new Date()) {
       return res.status(403).json({
@@ -198,11 +197,9 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    // Vérifier que l'utilisateur est membre
     const member = await ConversationMember.findOne({
       where: { userId: senderId, conversationId },
     });
-
     if (!member) {
       return res.status(403).json({ message: 'Accès refusé' });
     }
@@ -214,7 +211,17 @@ const sendMessage = async (req, res) => {
       fileType: 'TEXT',
     });
 
-    return res.status(201).json({ message: 'Message envoyé !', data: message });
+    const fullMessage = await Message.findByPk(message.id, {
+      include: [{ model: User, as: 'sender', attributes: ['id', 'nom', 'prenom', 'photo'] }],
+    });
+
+    // Émettre via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conv:${conversationId}`).emit('new_message', { conversationId, message: fullMessage });
+    }
+
+    return res.status(201).json({ message: 'Message envoyé !', data: fullMessage });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
@@ -270,7 +277,7 @@ const sendFileMessage = async (req, res) => {
     }
 
     const isImage = file.mimetype.startsWith('image/');
-    const fileUrl = `/uploads/chat/${isImage ? 'images' : 'pdfs'}/${file.filename}`;
+    const fileUrl = file.path;
 
     const message = await Message.create({
       conversationId,
@@ -283,6 +290,12 @@ const sendFileMessage = async (req, res) => {
     const fullMessage = await Message.findByPk(message.id, {
       include: [{ model: User, as: 'sender', attributes: ['id', 'nom', 'prenom', 'photo'] }],
     });
+
+    // Émettre via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conv:${conversationId}`).emit('new_message', { conversationId, message: fullMessage });
+    }
 
     return res.status(201).json({ message: fullMessage });
   } catch (error) {
@@ -376,6 +389,12 @@ const markAllAsRead = async (req, res) => {
         },
       }
     );
+
+    // Émettre via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conv:${conversationId}`).emit('messages_read', { conversationId, readerId: userId });
+    }
 
     return res.status(200).json({ message: 'Tous les messages marqués comme lus' });
   } catch (error) {
