@@ -2,146 +2,209 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, TextInput, ActivityIndicator,
-  RefreshControl, Alert,
+  RefreshControl, ScrollView, Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Ionicons from '@expo/vector-icons/Ionicons'
 import api from '../../services/auth.service'
 
 // ─── Couleurs ─────────────────────────────────────────────────────────────
-const COLORS = {
-  primary:       '#0D6B5E',
-  primaryLight:  '#E8F5F3',
-  bg:            '#F5F7F6',
-  white:         '#FFFFFF',
-  text:          '#1A1A2E',
-  textSecondary: '#6B7280',
-  border:        '#E5E7EB',
-  success:       '#10B981',
-  danger:        '#EF4444',
-  orange:        '#F97316',
-  purple:        '#7C3AED',
+const C = {
+  primary:      '#1A6B4A',   // vert foncé de l'image
+  primaryLight: '#E8F5EE',
+  bg:           '#FFFFFF',
+  white:        '#FFFFFF',
+  text:         '#1A1A1A',
+  sub:          '#888',
+  border:       '#EFEFEF',
+  success:      '#1A6B4A',
+  danger:       '#EF4444',
+  orange:       '#F97316',
+  purple:       '#7C3AED',
+  blue:         '#3B82F6',
+  amber:        '#F59E0B',
+  teal:         '#0D9488',
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────
-interface Student {
-  id:           string
-  nom:          string
-  prenom:       string
-  email:        string
-  scoreSAT:     number   // meilleur score SAT
-  avgQuizScore: number   // moyenne quiz du prof (%)
-  streak:       number
-  niveau:       string   // STARTER | EXPLORER | SCHOLAR | ACHIEVER | CHAMPION
+export interface Student {
+  id:              string
+  nom:             string
+  prenom:          string
+  email:           string
+  avatar?:         string
+  niveauScolaire?: string
+  matieres?:       string[]
+  niveauMatiere?:  string
+  scoreSAT:        number
+  avgQuizScore:    number
+  streak:          number
+  niveau:          string   // STARTER | EXPLORER | SCHOLAR | ACHIEVER | CHAMPION
+  lastActivity?:   string
+  unreadMessages?: number
 }
 
-// ─── Niveau → label + couleur ────────────────────────────────────────────
-const NIVEAU_MAP: Record<string, { label: string; color: string }> = {
-  STARTER:  { label: 'Débutant',      color: COLORS.danger  },
-  EXPLORER: { label: 'Intermédiaire', color: COLORS.orange  },
-  SCHOLAR:  { label: 'Avancé',        color: COLORS.success },
-  ACHIEVER: { label: 'Expert',        color: COLORS.primary },
-  CHAMPION: { label: 'Champion',      color: COLORS.purple  },
-}
-
-function getNiveau(s: Student) {
-  return NIVEAU_MAP[s.niveau] ?? { label: s.niveau, color: COLORS.textSecondary }
-}
-
-function makeInitials(s: Student): string {
-  return ([s.prenom?.[0], s.nom?.[0]].filter(Boolean).join('').toUpperCase()) || '?'
+// ─── Niveaux gamification ─────────────────────────────────────────────────
+const NIVEAU_MAP: Record<string, { label: string; color: string; bg: string }> = {
+  STARTER:  { label: 'Débutant',      color: '#EF4444', bg: '#FEE2E2' },
+  EXPLORER: { label: 'Intermédiaire', color: '#F97316', bg: '#FFEDD5' },
+  SCHOLAR:  { label: 'Avancé',        color: '#1A6B4A', bg: '#D1FAE5' },
+  ACHIEVER: { label: 'Expert',        color: '#7C3AED', bg: '#EDE9FE' },
+  CHAMPION: { label: 'Champion',      color: '#F59E0B', bg: '#FEF3C7' },
 }
 
 // ─── Filtres ──────────────────────────────────────────────────────────────
-type Filter = 'Tous' | 'CHAMPION' | 'ACHIEVER' | 'SCHOLAR' | 'EXPLORER' | 'STARTER'
+type FilterKey = 'Tous' | 'SCHOLAR' | 'ACHIEVER' | 'EXPLORER' | 'STARTER' | 'CHAMPION'
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'Tous',     label: 'Tous'          },
-  { key: 'CHAMPION', label: '🥇 Champion'   },
-  { key: 'ACHIEVER', label: '🏆 Expert'     },
-  { key: 'SCHOLAR',  label: '📚 Avancé'     },
-  { key: 'EXPLORER', label: '🔍 Interméd.'  },
-  { key: 'STARTER',  label: '🌱 Débutant'   },
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'Tous',     label: 'Tous'              },
+  { key: 'ACHIEVER', label: 'Avancé (1200+)'    },
+  { key: 'EXPLORER', label: 'Intermédiaire'     },
+  { key: 'STARTER',  label: 'Débutant'          },
+  { key: 'SCHOLAR',  label: 'Scholar'           },
+  { key: 'CHAMPION', label: 'Champion'          },
 ]
 
-// ─── Student Card ─────────────────────────────────────────────────────────
-function StudentCard({ item, onPress }: { item: Student; onPress: () => void }) {
-  const niveau = getNiveau(item)
+// ─── Helpers ──────────────────────────────────────────────────────────────
+function makeInitials(s: Student) {
+  return ([s.prenom?.[0], s.nom?.[0]].filter(Boolean).join('').toUpperCase()) || '?'
+}
+
+function isOnline(iso?: string) {
+  if (!iso) return false
+  return Date.now() - new Date(iso).getTime() < 5 * 60 * 1000
+}
+
+function streakLabel(n: number) {
+  return `${n} jour${n > 1 ? 's' : ''}`
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────
+function Avatar({ item, size = 52 }: { item: Student; size?: number }) {
+  const [err, setErr] = useState(false)
+  const online = isOnline(item.lastActivity)
+  const radius = size / 2
+
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
+    <View style={{ width: size, height: size }}>
+      {item.avatar && !err ? (
+        <Image
+          source={{ uri: item.avatar }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          onError={() => setErr(true)}
+        />
+      ) : (
+        <View style={[
+          st.avatarFallback,
+          { width: size, height: size, borderRadius: radius },
+        ]}>
+          <Text style={[st.avatarInitials, { fontSize: size * 0.34 }]}>
+            {makeInitials(item)}
+          </Text>
+        </View>
+      )}
+      {online && (
+        <View style={[
+          st.onlineDot,
+          { width: size * 0.26, height: size * 0.26, borderRadius: size * 0.13,
+            bottom: 0, right: 0 },
+        ]} />
+      )}
+    </View>
+  )
+}
+
+// ─── Student Card ─────────────────────────────────────────────────────────
+function StudentCard({
+  item, onPress, onChat,
+}: {
+  item: Student
+  onPress: () => void
+  onChat:  () => void
+}) {
+  const nv     = NIVEAU_MAP[item.niveau] ?? { label: item.niveau, color: C.sub, bg: '#F0F0F0' }
+  const unread = item.unreadMessages ?? 0
+
+  return (
+    <TouchableOpacity style={st.card} onPress={onPress} activeOpacity={0.75}>
       {/* Avatar */}
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{makeInitials(item)}</Text>
-      </View>
+      <Avatar item={item} size={52} />
 
-      {/* Content */}
-      <View style={styles.cardContent}>
-        {/* Top row */}
-        <View style={styles.cardTop}>
-          <Text style={styles.studentName}>{item.prenom} {item.nom}</Text>
-          <View style={styles.scoreBox}>
-            <Text style={styles.scoreLabel}>Score SAT</Text>
-            <Text style={styles.score}>{item.scoreSAT > 0 ? item.scoreSAT : '—'}</Text>
+      {/* Contenu */}
+      <View style={st.cardBody}>
+        {/* Ligne 1 : nom + score */}
+        <View style={st.cardRow}>
+          <Text style={st.cardName}>{item.prenom} {item.nom}</Text>
+          <View style={st.scoreArea}>
+            <Text style={st.scoreCaption}>Score SAT</Text>
+            <Text style={st.scoreNum}>{item.scoreSAT > 0 ? item.scoreSAT : '—'}</Text>
           </View>
         </View>
 
-        {/* Level badge + chevron */}
-        <View style={styles.levelRow}>
-          <View style={[styles.levelBadge, { backgroundColor: niveau.color + '20' }]}>
-            <Text style={[styles.levelText, { color: niveau.color }]}>{niveau.label}</Text>
+        {/* Ligne 2 : badge niveau + chevron */}
+        <View style={st.cardRow2}>
+          <View style={[st.badge, { backgroundColor: nv.bg }]}>
+            <Text style={[st.badgeText, { color: nv.color }]}>Niveau {nv.label}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+          <Ionicons name="chevron-forward" size={18} color="#CCC" />
         </View>
 
-        {/* Progress bar (avgQuizScore) + streak */}
-        <View style={styles.progressRow}>
-          <View style={styles.progressBg}>
+        {/* Ligne 3 : barre + % + streak */}
+        <View style={st.progressRow}>
+          <View style={st.progressTrack}>
             <View style={[
-              styles.progressFill,
+              st.progressBar,
               { width: `${Math.min(item.avgQuizScore, 100)}%` as any },
             ]} />
           </View>
-          <Text style={styles.progressText}>{item.avgQuizScore}%</Text>
-          <Text style={styles.streak}>
-            <Ionicons name="flame-outline" size={12} color={COLORS.orange} /> {item.streak}j
-          </Text>
+          <Text style={st.progressPct}>{item.avgQuizScore}%</Text>
+          <View style={st.streakWrap}>
+            <Ionicons name="flame" size={13} color={C.orange} />
+            <Text style={st.streakTxt}>{streakLabel(item.streak)}</Text>
+          </View>
         </View>
       </View>
+
+      {/* Bouton chat avec badge */}
+      {unread > 0 && (
+        <TouchableOpacity style={st.chatFab} onPress={onChat}>
+          <Ionicons name="chatbubble-ellipses" size={20} color={C.white} />
+          <View style={st.unreadBadge}>
+            <Text style={st.unreadTxt}>{unread > 9 ? '9+' : unread}</Text>
+          </View>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   )
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────
 interface Props {
   onNavigate: (screen: string, params?: any) => void
 }
 
 export default function ProfessorStudentsScreen({ onNavigate }: Props) {
-  const [students,    setStudents]    = useState<Student[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [refreshing,  setRefreshing]  = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
-  const [filter,      setFilter]      = useState<Filter>('Tous')
-  const [search,      setSearch]      = useState('')
-  const [showSearch,  setShowSearch]  = useState(false)
+  const [students,   setStudents]   = useState<Student[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+  const [filter,     setFilter]     = useState<FilterKey>('Tous')
+  const [search,     setSearch]     = useState('')
+  const [showSearch, setShowSearch] = useState(false)
 
-  // ── Fetch ──────────────────────────────────────────────────────────────
-  // GET /users/professor/students
-  // → { students: [{ id, nom, prenom, email, scoreSAT, avgQuizScore, streak, niveau }] }
-  // ⚠️ Endpoint à créer (specs envoyées à la responsable backend)
+  // ── Fetch ────────────────────────────────────────────────────────────
   const fetchStudents = useCallback(async () => {
     try {
       setError(null)
       const res = await api.get('/users/professor/students')
-      const list: Student[] = res.data?.students ?? []
-      setStudents(list)
+      setStudents(res.data?.students ?? [])
     } catch (e: any) {
       const status = e?.response?.status
-      if (status === 404 || status === 403) {
-        setError('endpoint_missing')
-      } else {
-        setError("Impossible de charger les étudiants.")
-      }
+      setError(
+        status === 404 || status === 403
+          ? 'endpoint_missing'
+          : 'Impossible de charger les étudiants.',
+      )
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -149,13 +212,9 @@ export default function ProfessorStudentsScreen({ onNavigate }: Props) {
   }, [])
 
   useEffect(() => { fetchStudents() }, [fetchStudents])
+  const onRefresh = useCallback(() => { setRefreshing(true); fetchStudents() }, [fetchStudents])
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true)
-    fetchStudents()
-  }, [fetchStudents])
-
-  // ── Filtrage local ────────────────────────────────────────────────────
+  // ── Filtrage ─────────────────────────────────────────────────────────
   const filtered = students
     .filter(s => filter === 'Tous' || s.niveau === filter)
     .filter(s => {
@@ -166,169 +225,166 @@ export default function ProfessorStudentsScreen({ onNavigate }: Props) {
     })
     .sort((a, b) => b.scoreSAT - a.scoreSAT)
 
-  // ── Stats rapides ─────────────────────────────────────────────────────
-  const avgSAT = students.length
-    ? Math.round(students.reduce((a, s) => a + s.scoreSAT, 0) / students.filter(s => s.scoreSAT > 0).length || 0)
-    : 0
-  const avgQuiz = students.length
-    ? Math.round(students.reduce((a, s) => a + s.avgQuizScore, 0) / students.length)
-    : 0
+  // ── Stats ────────────────────────────────────────────────────────────
+  const withSAT     = students.filter(s => s.scoreSAT > 0)
+  const avgSAT      = withSAT.length ? Math.round(withSAT.reduce((a, s) => a + s.scoreSAT, 0) / withSAT.length) : 0
+  const unreadTotal = students.reduce((a, s) => a + (s.unreadMessages ?? 0), 0)
 
-  // ── Loading ───────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Mes étudiants</Text>
-        </View>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      </SafeAreaView>
-    )
-  }
+  // ── États ────────────────────────────────────────────────────────────
+  if (loading) return (
+    <SafeAreaView style={st.safe}>
+      <View style={st.header}>
+        <Text style={st.headerTitle}>Mes étudiants</Text>
+      </View>
+      <View style={st.center}>
+        <ActivityIndicator size="large" color={C.primary} />
+      </View>
+    </SafeAreaView>
+  )
 
-  // ── Endpoint manquant ─────────────────────────────────────────────────
-  if (error === 'endpoint_missing') {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Mes étudiants</Text>
-        </View>
-        <View style={styles.center}>
-          <Ionicons name="construct-outline" size={52} color={COLORS.textSecondary} />
-          <Text style={styles.emptyTitle}>Endpoint en cours de développement</Text>
-          <Text style={styles.emptySubtitle}>
-            L'endpoint{' '}
-            <Text style={styles.code}>GET /users/professor/students</Text>
-            {'\n'}doit être ajouté par la responsable backend.
-          </Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchStudents}>
-            <Text style={styles.retryBtnText}>Réessayer</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    )
-  }
+  if (error === 'endpoint_missing') return (
+    <SafeAreaView style={st.safe}>
+      <View style={st.header}>
+        <Text style={st.headerTitle}>Mes étudiants</Text>
+      </View>
+      <View style={st.center}>
+        <Ionicons name="construct-outline" size={52} color={C.sub} />
+        <Text style={st.emptyTitle}>Endpoint en développement</Text>
+        <Text style={st.emptySub}>GET /users/professor/students n'est pas encore disponible.</Text>
+        <TouchableOpacity style={st.retryBtn} onPress={fetchStudents}>
+          <Text style={st.retryTxt}>Réessayer</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  )
 
-  // ── Erreur générique ──────────────────────────────────────────────────
-  if (error) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Mes étudiants</Text>
-        </View>
-        <View style={styles.center}>
-          <Ionicons name="cloud-offline-outline" size={52} color={COLORS.textSecondary} />
-          <Text style={styles.emptyTitle}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchStudents}>
-            <Text style={styles.retryBtnText}>Réessayer</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    )
-  }
+  if (error) return (
+    <SafeAreaView style={st.safe}>
+      <View style={st.header}>
+        <Text style={st.headerTitle}>Mes étudiants</Text>
+      </View>
+      <View style={st.center}>
+        <Ionicons name="cloud-offline-outline" size={52} color={C.sub} />
+        <Text style={st.emptyTitle}>{error}</Text>
+        <TouchableOpacity style={st.retryBtn} onPress={fetchStudents}>
+          <Text style={st.retryTxt}>Réessayer</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  )
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>
+    <SafeAreaView style={st.safe}>
+      {/* ── Header ── */}
+      <View style={st.header}>
+        <Text style={st.headerTitle}>
           Mes étudiants{students.length > 0 ? ` (${students.length})` : ''}
         </Text>
-        <View style={styles.headerIcons}>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={st.iconBtn}
             onPress={() => { setShowSearch(v => !v); setSearch('') }}
           >
             <Ionicons
               name={showSearch ? 'close-outline' : 'search-outline'}
-              size={22} color={COLORS.text}
+              size={22} color={C.text}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={onRefresh}>
-            <Ionicons name="refresh-outline" size={22} color={COLORS.text} />
+          <TouchableOpacity style={st.iconBtn} onPress={onRefresh}>
+            <Ionicons name="options-outline" size={22} color={C.text} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search bar */}
+      {/* ── Recherche ── */}
       {showSearch && (
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} style={{ marginRight: 8 }} />
+        <View style={st.searchWrap}>
+          <Ionicons name="search-outline" size={17} color={C.sub} />
           <TextInput
-            style={styles.searchInput}
+            style={st.searchInput}
             placeholder="Rechercher un étudiant..."
-            placeholderTextColor={COLORS.textSecondary}
+            placeholderTextColor={C.sub}
             value={search}
             onChangeText={setSearch}
             autoFocus
           />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Ionicons name="close-circle" size={17} color={C.sub} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
-      {/* Stats rapides */}
-      {students.length > 0 && (
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Ionicons name="people-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.statValue}>{students.length}</Text>
-            <Text style={styles.statLabel}>Étudiants</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Ionicons name="trending-up-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.statValue}>{avgSAT > 0 ? avgSAT : '—'}</Text>
-            <Text style={styles.statLabel}>Score SAT moy.</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Ionicons name="ribbon-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.statValue}>{avgQuiz}%</Text>
-            <Text style={styles.statLabel}>Quiz moy.</Text>
-          </View>
-        </View>
-      )}
-
-      {/* Filtres */}
-      <FlatList
-        data={FILTERS}
-        keyExtractor={f => f.key}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterContainer}
-        renderItem={({ item: f }) => (
-          <TouchableOpacity
-            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        )}
-      />
-
-      {/* Liste étudiants */}
       <FlatList
         data={filtered}
         keyExtractor={item => item.id}
-        contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />
+        }
+        contentContainerStyle={filtered.length === 0 ? st.emptyContainer : st.list}
+        ListHeaderComponent={
+          <>
+            {/* ── Stats top ── */}
+            {students.length > 0 && (
+              <View style={st.statsCard}>
+                <View style={st.statItem}>
+                  <Ionicons name="people" size={20} color={C.primary} />
+                  <Text style={st.statNum}>{students.length}</Text>
+                  <Text style={st.statLbl}>Étudiants</Text>
+                </View>
+                <View style={st.statSep} />
+                <View style={st.statItem}>
+                  <Ionicons name="trending-up" size={20} color={C.primary} />
+                  <Text style={st.statNum}>{avgSAT > 0 ? avgSAT : '—'}</Text>
+                  <Text style={st.statLbl}>Score SAT moy.</Text>
+                </View>
+                <View style={st.statSep} />
+                <View style={st.statItem}>
+                  <Ionicons
+                    name="chatbubble-ellipses"
+                    size={20}
+                    color={unreadTotal > 0 ? C.orange : C.primary}
+                  />
+                  <Text style={[st.statNum, unreadTotal > 0 && { color: C.orange }]}>
+                    {unreadTotal}
+                  </Text>
+                  <Text style={st.statLbl}>Non lus</Text>
+                </View>
+              </View>
+            )}
+
+            {/* ── Filtres ── */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={st.filtersRow}
+            >
+              {FILTERS.map(f => (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[st.chip, filter === f.key && st.chipActive]}
+                  onPress={() => setFilter(f.key)}
+                >
+                  <Text style={[st.chipTxt, filter === f.key && st.chipTxtActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={56} color={COLORS.textSecondary} />
-            <Text style={styles.emptyTitle}>
+          <View style={st.emptyState}>
+            <Ionicons name="people-outline" size={56} color={C.sub} />
+            <Text style={st.emptyTitle}>
               {search ? 'Aucun résultat' : 'Aucun étudiant'}
             </Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={st.emptySub}>
               {search
-                ? `Aucun étudiant ne correspond à "${search}".`
-                : 'Les étudiants apparaîtront ici une fois qu\'ils auront soumis un de vos quiz.'
+                ? `Aucun étudiant pour "${search}".`
+                : "Les étudiants apparaîtront ici une fois qu'ils auront soumis un de vos quiz."
               }
             </Text>
           </View>
@@ -337,99 +393,134 @@ export default function ProfessorStudentsScreen({ onNavigate }: Props) {
           <StudentCard
             item={item}
             onPress={() => onNavigate('student_profile', item)}
+            onChat={() => onNavigate('chat', {
+              studentId: item.id,
+              studentName: `${item.prenom} ${item.nom}`,
+            })}
           />
         )}
       />
+
+      {/* FAB "+" */}
+      <TouchableOpacity
+        style={st.fab}
+        onPress={() => onNavigate('invite_student')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={28} color={C.white} />
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: COLORS.bg },
+const st = StyleSheet.create({
+  safe:   { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
 
+  // Header
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 16,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 40, paddingBottom: 12,
+    backgroundColor: C.white,
+    borderBottomWidth: 1, borderBottomColor: C.border,
   },
-  title:       { fontSize: 20, fontWeight: '800', color: COLORS.primary },
-  headerIcons: { flexDirection: 'row', gap: 4 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#0D6B5E' },
   iconBtn:     { padding: 6 },
 
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  // Search
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.white, marginHorizontal: 16, marginVertical: 10,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
+    borderWidth: 1.5, borderColor: C.border,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.text },
+  searchInput: { flex: 1, fontSize: 14, color: C.text },
 
   // Stats
-  statsRow: {
-    flexDirection: 'row', backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  statsCard: {
+    flexDirection: 'row', backgroundColor: C.white,
+    marginHorizontal: 16, marginTop: 16, marginBottom: 4,
+    borderRadius: 18, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  statBox:     { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
-  statDivider: { width: 1, height: 40, backgroundColor: COLORS.border, alignSelf: 'center' },
-  statValue:   { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  statLabel:   { fontSize: 10, color: COLORS.textSecondary, textAlign: 'center' },
+  statItem:  { flex: 1, alignItems: 'center', paddingVertical: 16, gap: 4 },
+  statSep:   { width: 1, height: 44, backgroundColor: C.border, alignSelf: 'center' },
+  statNum:   { fontSize: 20, fontWeight: '800', color: C.text },
+  statLbl:   { fontSize: 10, color: C.sub, textAlign: 'center' },
 
   // Filtres
-  filterScroll:    { backgroundColor: COLORS.white, maxHeight: 56 },
-  filterContainer: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
-  filterChip: {
-    paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 20, backgroundColor: COLORS.bg,
-    borderWidth: 1, borderColor: COLORS.border,
+  filtersRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  chip: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 24,
+    backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border,
   },
-  filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterText:       { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
-  filterTextActive: { color: COLORS.white, fontWeight: '700' },
+  chipActive:   { backgroundColor: C.primary, borderColor: C.primary },
+  chipTxt:      { fontSize: 13, color: C.sub, fontWeight: '500' },
+  chipTxtActive:{ color: C.white, fontWeight: '700' },
 
   // Liste
-  list:           { padding: 16, gap: 12, paddingBottom: 24 },
+  list:           { paddingHorizontal: 16, paddingBottom: 100, gap: 12, paddingTop: 4 },
   emptyContainer: { flex: 1 },
 
   // Card
   card: {
-    flexDirection: 'row', backgroundColor: COLORS.white,
-    borderRadius: 16, padding: 14, gap: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.white, borderRadius: 18, padding: 16, gap: 14,
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
-  avatar: {
-    width: 50, height: 50, borderRadius: 25,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center', justifyContent: 'center',
+  avatarFallback: {
+    backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
   },
-  avatarText:   { color: COLORS.white, fontWeight: '800', fontSize: 17 },
-  cardContent:  { flex: 1 },
-  cardTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  studentName:  { fontSize: 15, fontWeight: '700', color: COLORS.text, flex: 1, marginRight: 8 },
-  scoreBox:     { alignItems: 'flex-end' },
-  scoreLabel:   { fontSize: 10, color: COLORS.textSecondary },
-  score:        { fontSize: 20, fontWeight: '800', color: COLORS.text },
-  levelRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  levelBadge:   { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
-  levelText:    { fontSize: 12, fontWeight: '600' },
-  progressRow:  { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
-  progressBg:   { flex: 1, height: 5, backgroundColor: COLORS.border, borderRadius: 3 },
-  progressFill: { height: 5, backgroundColor: COLORS.primary, borderRadius: 3 },
-  progressText: { fontSize: 12, fontWeight: '600', color: COLORS.text },
-  streak:       { fontSize: 12, color: COLORS.orange },
+  avatarInitials: { color: C.white, fontWeight: '800' },
+  onlineDot: {
+    position: 'absolute', backgroundColor: '#22C55E',
+    borderWidth: 2, borderColor: C.white,
+  },
+  cardBody:    { flex: 1 },
+  cardRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardRow2:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  cardName:    { fontSize: 16, fontWeight: '700', color: C.text, flex: 1, marginRight: 8 },
+  scoreArea:   { alignItems: 'flex-end' },
+  scoreCaption:{ fontSize: 10, color: C.sub, marginBottom: 1 },
+  scoreNum:    { fontSize: 22, fontWeight: '800', color: C.text },
+
+  badge:       { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  badgeText:   { fontSize: 12, fontWeight: '600' },
+
+  progressRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  progressTrack:{ flex: 1, height: 6, backgroundColor: C.border, borderRadius: 3, overflow: 'hidden' },
+  progressBar:  { height: 6, backgroundColor: C.primary, borderRadius: 3 },
+  progressPct:  { fontSize: 13, fontWeight: '700', color: C.text },
+  streakWrap:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  streakTxt:    { fontSize: 12, color: C.orange, fontWeight: '600' },
+
+  chatFab: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.primary, shadowOpacity: 0.4, shadowRadius: 6, elevation: 4,
+  },
+  unreadBadge: {
+    position: 'absolute', top: -2, right: -2,
+    backgroundColor: C.orange, borderRadius: 8,
+    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  unreadTxt: { color: C.white, fontSize: 9, fontWeight: '800' },
+
+  // FAB
+  fab: {
+    position: 'absolute', bottom: 28, right: 20,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.primary, shadowOpacity: 0.45, shadowRadius: 10, elevation: 8,
+  },
 
   // Empty / Error
-  emptyState:    { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 },
-  emptyTitle:    { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
-  emptySubtitle: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
-  code: {
-    fontFamily: 'monospace', backgroundColor: '#F0F0F0',
-    paddingHorizontal: 4, borderRadius: 4, fontSize: 12, color: COLORS.primary,
-  },
-  retryBtn:     { backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 },
-  retryBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12, marginTop: 60 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: C.text, textAlign: 'center' },
+  emptySub:   { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 20 },
+  retryBtn:   { backgroundColor: C.primary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 13, marginTop: 6 },
+  retryTxt:   { color: C.white, fontWeight: '700', fontSize: 14 },
 })

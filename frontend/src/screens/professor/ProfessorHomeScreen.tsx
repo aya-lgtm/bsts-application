@@ -1,558 +1,474 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, RefreshControl,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Image,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Ionicons from '@expo/vector-icons/Ionicons'
 import * as SecureStore from 'expo-secure-store'
 import api from '../../services/auth.service'
 
-// ─── Couleurs ─────────────────────────────────────────────────────────────
-const COLORS = {
-  primary:       '#0D6B5E',
-  primaryLight:  '#E8F5F3',
-  bg:            '#F5F7F6',
-  white:         '#FFFFFF',
-  text:          '#1A1A2E',
-  textSecondary: '#6B7280',
-  border:        '#E5E7EB',
-  success:       '#10B981',
-  danger:        '#EF4444',
-  orange:        '#F97316',
-  purple:        '#7C3AED',
-  gold:          '#D4A017',
+// ─── Logo local ───────────────────────────────────────────────────────────
+const LOGO = require('../../assets/logo1.png')   // ← ajuste le chemin selon ton arbo
+
+// ─── Palette ──────────────────────────────────────────────────────────────
+const C = {
+  primary:   '#0D6B5E',
+  primaryBg: '#E8F5F3',
+  bg:        '#FFFFFF',
+  text:      '#111111',
+  sub:       '#888888',
+  border:    '#F0F0F0',
+  success:   '#22C55E',
+  orange:    '#F97316',
+  blue:      '#3B82F6',
+  purple:    '#8B5CF6',
+  red:       '#EF4444',
+  white:     '#FFFFFF',
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface UserData {
-  id:       string
-  nom:      string
-  prenom:   string
-  email:    string
-  matieres?: string[]
+  id: string; nom: string; prenom: string; email: string
+  photo?: string; matieres?: string[]
 }
-
-interface ProfStats {
-  totalStudents:   number
-  totalQuizzes:    number
-  avgStudentScore: number
+interface ProfStats { totalStudents: number; totalQuizzes: number; avgStudentScore: number }
+interface StudentActivity {
+  id: string; studentName: string; title: string
+  subtitle: string; date: string; icon: string; iconColor: string
 }
+interface ConvMessage { isRead: boolean; senderId: string; content?: string; createdAt?: string }
+interface Conversation { id: string; Messages?: ConvMessage[]; members?: any[] }
 
-interface Notification {
-  id:       string
-  type:     string
-  title:    string
-  subtitle: string
-  read:     boolean
-  createdAt:string
-}
-
-interface Conversation {
-  id:       string
-  Messages?: { isRead: boolean; senderId: string }[]
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
-function formatTime(iso: string): string {
-  const d    = new Date(iso)
-  const now  = new Date()
-  const diff = Math.floor((now.getTime() - d.getTime()) / 86400000)
-  if (diff === 0) return "Aujourd'hui"
-  if (diff === 1) return 'Hier'
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-}
-
-const NOTIF_ICON: Record<string, { icon: string; color: string }> = {
-  lesson:  { icon: 'book-outline',           color: COLORS.primary },
-  quiz:    { icon: 'create-outline',          color: COLORS.purple  },
-  score:   { icon: 'trending-up-outline',     color: COLORS.gold    },
-  payment: { icon: 'card-outline',            color: COLORS.success },
-  streak:  { icon: 'flame-outline',           color: COLORS.orange  },
-  renewal: { icon: 'refresh-circle-outline',  color: COLORS.primary },
-}
-
-// ─── Stat Card ────────────────────────────────────────────────────────────
-function StatCard({
-  icon, value, label, loading, green, onPress,
-}: {
-  icon: string; value: string; label: string
-  loading?: boolean; green?: boolean; onPress?: () => void
+// ─── Helpers ──────────────────────────────────────────────────────────────
+function ProfileAvatar({ photo, prenom, nom, size = 66 }: {
+  photo?: string; prenom?: string; nom?: string; size?: number
 }) {
+  const [err, setErr] = useState(false)
+  const initials = ([prenom?.[0], nom?.[0]].filter(Boolean).join('').toUpperCase()) || 'PR'
+  if (photo && !err) {
+    return (
+      <Image
+        source={{ uri: photo }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        onError={() => setErr(true)}
+      />
+    )
+  }
   return (
-    <TouchableOpacity
-      style={[styles.statCard, green && styles.statCardGreen]}
-      onPress={onPress}
-      activeOpacity={onPress ? 0.75 : 1}
-    >
-      <View style={[styles.statIconBox, { backgroundColor: green ? COLORS.primary + '20' : COLORS.primaryLight }]}>
-        <Ionicons name={icon as any} size={18} color={green ? COLORS.primary : COLORS.primary} />
-      </View>
-      {loading
-        ? <ActivityIndicator size="small" color={green ? COLORS.primary : COLORS.textSecondary} style={{ marginVertical: 4 }} />
-        : <Text style={[styles.statValue, green && styles.statValueGreen]}>{value}</Text>
-      }
-      <Text style={[styles.statLabel, green && styles.statLabelGreen]}>{label}</Text>
-    </TouchableOpacity>
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Text style={{ color: C.white, fontWeight: '800', fontSize: size * 0.33 }}>{initials}</Text>
+    </View>
   )
 }
 
-// ─── Quick Action ─────────────────────────────────────────────────────────
-function QuickAction({
-  icon, label, color, onPress,
-}: {
-  icon: string; label: string; color: string; onPress: () => void
-}) {
-  return (
-    <TouchableOpacity style={styles.quickAction} onPress={onPress} activeOpacity={0.75}>
-      <View style={[styles.quickActionIcon, { backgroundColor: color + '18' }]}>
-        <Ionicons name={icon as any} size={22} color={color} />
-      </View>
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
-  )
-}
-
-// ─── Main Screen ──────────────────────────────────────────────────────────
-interface Props {
-  onNavigate: (screen: string, params?: any) => void
-}
+// ─── Main ─────────────────────────────────────────────────────────────────
+interface Props { onNavigate: (screen: string, params?: any) => void }
 
 export default function ProfessorHomeScreen({ onNavigate }: Props) {
-  const [user,          setUser]          = useState<UserData | null>(null)
-  const [stats,         setStats]         = useState<ProfStats | null>(null)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadMsgs,    setUnreadMsgs]    = useState(0)
-  const [loadingStats,  setLoadingStats]  = useState(true)
-  const [loadingNotifs, setLoadingNotifs] = useState(true)
-  const [refreshing,    setRefreshing]    = useState(false)
+  const [user,         setUser]        = useState<UserData | null>(null)
+  const [stats,        setStats]       = useState<ProfStats | null>(null)
+  const [activity,     setActivity]    = useState<StudentActivity[]>([])
+  const [unreadMsgs,   setUnreadMsgs]  = useState(0)
+  const [totalCours,   setTotalCours]  = useState<number | null>(null)
+  const [loadingStats, setLoadingStats]= useState(true)
+  const [loadingAct,   setLoadingAct]  = useState(true)
+  const [refreshing,   setRefreshing]  = useState(false)
 
-  // ── Charger user depuis SecureStore ───────────────────────────────────
   const loadUser = useCallback(async () => {
-    try {
-      const str = await SecureStore.getItemAsync('user')
-      if (str) setUser(JSON.parse(str))
-    } catch (_) {}
+    try { const s = await SecureStore.getItemAsync('user'); if (s) setUser(JSON.parse(s)) } catch (_) {}
   }, [])
 
-  // ── Stats prof ────────────────────────────────────────────────────────
-  // GET /users/professor/stats → { totalStudents, totalQuizzes, avgStudentScore }
+  // GET /users/professor/stats
   const fetchStats = useCallback(async () => {
-    try {
-      const res = await api.get('/users/professor/stats')
-      setStats(res.data)
-    } catch (_) {
-      setStats(null)
-    } finally {
-      setLoadingStats(false)
-    }
+    try { const r = await api.get('/users/professor/stats'); setStats(r.data) }
+    catch (_) { setStats(null) } finally { setLoadingStats(false) }
   }, [])
 
-  // ── Notifications ─────────────────────────────────────────────────────
-  // GET /notifications → { notifications: [...] }
-  const fetchNotifications = useCallback(async () => {
+  // GET /course — cours actifs
+  const fetchCours = useCallback(async () => {
     try {
-      const res = await api.get('/notifications')
-      const list: Notification[] = res.data?.notifications ?? []
-      // Garder seulement les 4 plus récentes non lues pour la home
-      const unread = list.filter(n => !n.read).slice(0, 4)
-      setNotifications(unread)
-    } catch (_) {
-      setNotifications([])
-    } finally {
-      setLoadingNotifs(false)
-    }
+      const r = await api.get('/course')
+      const l = r.data?.courses ?? r.data?.data ?? []
+      setTotalCours(Array.isArray(l) ? l.length : null)
+    } catch (_) { setTotalCours(null) }
   }, [])
 
-  // ── Messages non lus ──────────────────────────────────────────────────
-  // GET /chat/ → { conversations: [...] }
-  const fetchUnreadMessages = useCallback(async () => {
+  // GET /users/professor/students/activity
+  const fetchActivity = useCallback(async () => {
+    try { const r = await api.get('/users/professor/students/activity', { params: { limit: 5 } }); setActivity(r.data?.activity ?? []) }
+    catch (_) { setActivity([]) } finally { setLoadingAct(false) }
+  }, [])
+
+  // GET /chat/ — messages non lus
+  const fetchUnread = useCallback(async () => {
     try {
-      const stored = await SecureStore.getItemAsync('user')
-      const myId   = stored ? JSON.parse(stored).id : ''
-      const res    = await api.get('/chat/')
-      const convs: Conversation[] = res.data?.conversations ?? []
-      const total = convs.reduce((acc, c) => {
-        const msgs = c.Messages ?? []
-        return acc + msgs.filter(m => !m.isRead && m.senderId !== myId).length
-      }, 0)
-      setUnreadMsgs(total)
-    } catch (_) {
-      setUnreadMsgs(0)
-    }
+      const s  = await SecureStore.getItemAsync('user')
+      const id = s ? JSON.parse(s).id : ''
+      const r  = await api.get('/chat/')
+      const cs: Conversation[] = r.data?.conversations ?? []
+      setUnreadMsgs(cs.reduce((a, c) => a + (c.Messages ?? []).filter(m => !m.isRead && m.senderId !== id).length, 0))
+    } catch (_) { setUnreadMsgs(0) }
   }, [])
 
   const fetchAll = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchNotifications(), fetchUnreadMessages()])
-  }, [fetchStats, fetchNotifications, fetchUnreadMessages])
+    await Promise.all([fetchStats(), fetchCours(), fetchActivity(), fetchUnread()])
+  }, [fetchStats, fetchCours, fetchActivity, fetchUnread])
 
-  useEffect(() => {
-    loadUser()
-    fetchAll()
-  }, [loadUser, fetchAll])
+  useEffect(() => { loadUser(); fetchAll() }, [loadUser, fetchAll])
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true)
-    setLoadingStats(true)
-    setLoadingNotifs(true)
+    setRefreshing(true); setLoadingStats(true); setLoadingAct(true)
     await Promise.all([loadUser(), fetchAll()])
     setRefreshing(false)
-    setLoadingStats(false)
-    setLoadingNotifs(false)
   }, [loadUser, fetchAll])
 
-  // ── Valeurs affichées ─────────────────────────────────────────────────
-  const prenom   = user?.prenom ?? '...'
+  const prenom   = user?.prenom ?? ''
   const nom      = user?.nom    ?? ''
-  const initials = ([prenom[0], nom[0]].filter(Boolean).join('').toUpperCase()) || 'PR'
-  const unreadNotifs = notifications.length
-  const totalUnread  = unreadNotifs + unreadMsgs
+  const satMoyen = stats?.avgStudentScore
+    ? Math.round(400 + (stats.avgStudentScore / 100) * 1200) : 0
 
-  const quickActions = [
-    { icon: 'book-outline',      label: 'Cours',     color: COLORS.primary, screen: 'cours'     },
-    { icon: 'create-outline',    label: 'Quiz',      color: COLORS.purple,  screen: 'quiz'      },
-    { icon: 'bar-chart-outline', label: 'Analyses',  color: COLORS.orange,  screen: 'analyses'  },
-    { icon: 'chatbubbles-outline',label: 'Chat',     color: COLORS.success, screen: 'chat'      },
+  // ── 6 stats en 2 lignes de 3 ──────────────────────────────────────────
+  // Icônes EXACTEMENT depuis Ionicons comme dans la maquette
+  const statsRow1 = [
+    {
+      // Maquette : icône silhouettes de personnes
+      icon: 'people-outline' as const,
+      value: loadingStats ? null : String(stats?.totalStudents ?? '—'),
+      label: 'Étudiants',
+      color: C.primary, bg: C.primaryBg,
+      onPress: () => onNavigate('etudiants'),
+    },
+    {
+      // Maquette : icône livre ouvert
+      icon: 'book-outline' as const,
+      value: totalCours !== null ? String(totalCours) : '—',
+      label: 'Cours actifs',
+      color: '#7C3AED', bg: '#EDE9FE',
+      onPress: () => onNavigate('cours'),
+    },
+    {
+      // Maquette : icône presse-papier / liste
+      icon: 'document-text-outline' as const,
+      value: loadingStats ? null : String(stats?.totalQuizzes ?? '—'),
+      label: 'Quiz créés',
+      color: '#0EA5E9', bg: '#E0F2FE',
+      onPress: () => onNavigate('quiz'),
+    },
   ]
 
+  const statsRow2 = [
+    {
+      // Maquette : bulle de chat
+      icon: 'chatbubble-ellipses-outline' as const,
+      value: String(unreadMsgs),
+      label: 'Messages non lus',
+      color: C.blue, bg: '#EFF6FF',
+      onPress: () => onNavigate('chat'),
+    },
+    {
+      // Maquette : cercle avec cible / check animé
+      icon: 'radio-button-on-outline' as const,
+      value: loadingStats ? null : `${stats?.avgStudentScore ?? '—'}%`,
+      label: 'Taux réussite moyen',
+      color: C.success, bg: '#F0FDF4',
+    },
+    {
+      // Maquette : flèche montante (trending up)
+      icon: 'trending-up-outline' as const,
+      value: loadingStats ? null : (satMoyen > 0 ? String(satMoyen) : '—'),
+      label: 'Score SAT moyen',
+      color: C.orange, bg: '#FFF7ED',
+    },
+  ]
+
+  // ── Actions rapides — sans "Voir les résultats" (pas de page dédiée) ──
+  // Remplacé par "Mes étudiants" qui existe
+  const quickActions = [
+    {
+      // Maquette : boîte 3D / colis
+      icon: 'cube-outline' as const,
+      label: 'Ajouter\nun cours',
+      color: C.primary, bg: C.primaryBg,
+      screen: 'cours',
+    },
+    {
+      // Maquette : enveloppe crayon
+      icon: 'mail-outline' as const,
+      label: 'Créer\nun quiz',
+      color: '#7C3AED', bg: '#EDE9FE',
+      screen: 'quiz',
+    },
+    {
+      // Remplace "Voir résultats" → "Mes étudiants"
+      icon: 'people-circle-outline' as const,
+      label: 'Mes\nétudiants',
+      color: C.orange, bg: '#FFF7ED',
+      screen: 'etudiants',
+    },
+    {
+      // Maquette : bulle chat ronde
+      icon: 'chatbubble-outline' as const,
+      label: 'Ouvrir\nle chat',
+      color: C.blue, bg: '#EFF6FF',
+      screen: 'chat',
+    },
+  ]
+
+  // ─────────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={st.safe}>
       <ScrollView
-        style={styles.scroll}
+        style={st.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />
         }
       >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <View>
-              <Text style={styles.greeting}>Bonjour,</Text>
-              <Text style={styles.name}>Prof. {prenom} {nom} 👋</Text>
-              <Text style={styles.subtitle}>Voici un aperçu de votre activité aujourd'hui.</Text>
-            </View>
+
+        {/* ══ HEADER : hamburger | logo PNG | cloche ═══════════════════════ */}
+        <View style={st.header}>
+
+          {/* Hamburger — 3 lignes dont la 3ème plus courte (Ionicons: menu) */}
+          <TouchableOpacity
+            onPress={() => onNavigate('menu')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="menu-outline" size={30} color={C.text} />
+          </TouchableOpacity>
+
+          {/* Logo PNG BSTS */}
+          <Image
+            source={LOGO}
+            style={st.logo}
+            resizeMode="contain"
+          />
+
+          {/* Cloche — navigue vers notifications */}
+          <TouchableOpacity
+            onPress={() => onNavigate('notifications')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={st.bellWrap}
+          >
+            <Ionicons name="notifications-outline" size={26} color={C.text} />
+            {unreadMsgs > 0 && (
+              <View style={st.bellBadge}>
+                <Text style={st.bellBadgeText}>{unreadMsgs > 9 ? '9+' : unreadMsgs}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* ══ HERO : Bonjour + photo ════════════════════════════════════════ */}
+        <View style={st.hero}>
+          <View style={st.heroLeft}>
+            <Text style={st.heroGreeting}>Bonjour,</Text>
+            <Text style={st.heroName}>Prof. {prenom} {nom} 👋</Text>
+            <Text style={st.heroSub}>Voici un aperçu de votre activité aujourd'hui.</Text>
           </View>
-          <View style={styles.headerRight}>
-            {/* Cloche notifications */}
+          <TouchableOpacity onPress={() => onNavigate('profil')} activeOpacity={0.85}>
+            <ProfileAvatar photo={user?.photo} prenom={prenom} nom={nom} size={68} />
+          </TouchableOpacity>
+        </View>
+
+        {/* ══ STATS LIGNE 1 ════════════════════════════════════════════════ */}
+        <View style={st.statsRow}>
+          {statsRow1.map((s, i) => (
             <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={() => onNavigate('analyses')}
+              key={i}
+              style={st.statCard}
+              onPress={s.onPress}
+              activeOpacity={0.78}
             >
-              <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
-              {unreadNotifs > 0 && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>
-                    {unreadNotifs > 9 ? '9+' : unreadNotifs}
-                  </Text>
-                </View>
-              )}
+              <View style={[st.statCircle, { backgroundColor: s.bg }]}>
+                <Ionicons name={s.icon} size={22} color={s.color} />
+              </View>
+              {s.value === null
+                ? <ActivityIndicator size="small" color={s.color} style={{ marginVertical: 4 }} />
+                : <Text style={[st.statNum, { color: s.color }]}>{s.value}</Text>
+              }
+              <Text style={st.statLbl}>{s.label}</Text>
             </TouchableOpacity>
-            {/* Avatar */}
+          ))}
+        </View>
+
+        {/* ══ STATS LIGNE 2 ════════════════════════════════════════════════ */}
+        <View style={[st.statsRow, { marginTop: 10 }]}>
+          {statsRow2.map((s, i) => (
             <TouchableOpacity
-              style={styles.avatar}
-              onPress={() => onNavigate('profil')}
+              key={i}
+              style={st.statCard}
+              onPress={(s as any).onPress}
+              activeOpacity={(s as any).onPress ? 0.78 : 1}
             >
-              <Text style={styles.avatarText}>{initials}</Text>
+              <View style={[st.statCircle, { backgroundColor: s.bg }]}>
+                <Ionicons name={s.icon} size={22} color={s.color} />
+              </View>
+              {s.value === null
+                ? <ActivityIndicator size="small" color={s.color} style={{ marginVertical: 4 }} />
+                : <Text style={[st.statNum, { color: s.color }]}>{s.value}</Text>
+              }
+              <Text style={st.statLbl} numberOfLines={2}>{s.label}</Text>
             </TouchableOpacity>
-          </View>
+          ))}
         </View>
 
-        {/* ── Stats Row 1 : données prof ── */}
-        {/* Source : GET /users/professor/stats */}
-        <View style={styles.statsRow}>
-          <StatCard
-            icon="people-outline"
-            value={stats ? String(stats.totalStudents) : '—'}
-            label="Étudiants"
-            loading={loadingStats}
-            onPress={() => onNavigate('etudiants')}
-          />
-          <StatCard
-            icon="create-outline"
-            value={stats ? String(stats.totalQuizzes) : '—'}
-            label="Quiz créés"
-            loading={loadingStats}
-            onPress={() => onNavigate('quiz')}
-          />
-          <StatCard
-            icon="ribbon-outline"
-            value={stats ? `${stats.avgStudentScore}%` : '—'}
-            label="Score moyen"
-            loading={loadingStats}
-            green
-          />
-        </View>
-
-        {/* ── Stats Row 2 : messages + notifs ── */}
-        {/* Sources : GET /chat/ + GET /notifications */}
-        <View style={styles.statsRow}>
-          <StatCard
-            icon="chatbubbles-outline"
-            value={String(unreadMsgs)}
-            label="Messages non lus"
-            onPress={() => onNavigate('chat')}
-          />
-          <StatCard
-            icon="notifications-outline"
-            value={String(unreadNotifs)}
-            label="Notifications"
-          />
-          <StatCard
-            icon="trending-up-outline"
-            value={stats?.avgStudentScore ? String(
-              Math.round(400 + (stats.avgStudentScore / 100) * 1200)
-            ) : '—'}
-            label="Score SAT moy."
-            loading={loadingStats}
-            green
-          />
-        </View>
-
-        {/* ── Matières ── */}
-        {user?.matieres && user.matieres.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Mes matières</Text>
-            <View style={styles.matieresRow}>
-              {user.matieres.map((m, i) => (
-                <View key={i} style={styles.matiereBadge}>
-                  <Text style={styles.matiereText}>{m}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ── Notifications récentes ── */}
-        {/* Source : GET /notifications (4 dernières non lues) */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              Notifications récentes
-              {unreadNotifs > 0 && (
-                <Text style={styles.sectionBadge}> · {unreadNotifs}</Text>
-              )}
-            </Text>
-            <TouchableOpacity onPress={() => onNavigate('analyses')}>
-              <Text style={styles.seeAll}>Voir tout →</Text>
+        {/* ══ ACTIVITÉ RÉCENTE ═════════════════════════════════════════════ */}
+        {/* GET /users/professor/students/activity — limit 5 */}
+        <View style={st.section}>
+          <View style={st.sectionHead}>
+            <Text style={st.sectionTitle}>Activité récente</Text>
+            <TouchableOpacity onPress={() => onNavigate('etudiants')}>
+              <Text style={st.seeAll}>Voir tout &gt;</Text>
             </TouchableOpacity>
           </View>
 
-          {loadingNotifs ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 16 }} />
-          ) : notifications.length === 0 ? (
-            <View style={styles.emptyNotifs}>
-              <Ionicons name="checkmark-circle-outline" size={32} color={COLORS.success} />
-              <Text style={styles.emptyNotifsText}>Tout est à jour !</Text>
+          {loadingAct ? (
+            <ActivityIndicator color={C.primary} style={{ marginVertical: 24 }} />
+          ) : activity.length === 0 ? (
+            <View style={st.emptyWrap}>
+              <Ionicons name="time-outline" size={34} color="#CCC" />
+              <Text style={st.emptyTxt}>Aucune activité récente</Text>
             </View>
           ) : (
-            notifications.map((n, i) => {
-              const meta = NOTIF_ICON[n.type] ?? { icon: 'notifications-outline', color: COLORS.primary }
+            activity.map((a, i) => {
+              const ico   = (a.icon ?? 'notifications-outline') as keyof typeof Ionicons.glyphMap
+              const color = a.iconColor ?? C.primary
               return (
-                <View key={n.id} style={[styles.notifRow, i < notifications.length - 1 && styles.notifRowBorder]}>
-                  <View style={[styles.notifIcon, { backgroundColor: meta.color + '18' }]}>
-                    <Ionicons name={meta.icon as any} size={18} color={meta.color} />
+                <View key={a.id} style={[st.actRow, i < activity.length - 1 && st.actBorder]}>
+                  <View style={[st.actCircle, { backgroundColor: color + '18' }]}>
+                    <Ionicons name={ico} size={20} color={color} />
                   </View>
-                  <View style={styles.notifContent}>
-                    <Text style={styles.notifTitle} numberOfLines={1}>{n.title}</Text>
-                    {n.subtitle ? (
-                      <Text style={styles.notifSubtitle} numberOfLines={1}>{n.subtitle}</Text>
-                    ) : null}
+                  <View style={st.actBody}>
+                    <Text style={st.actTitle}>
+                      <Text style={{ fontWeight: '700' }}>{a.studentName}</Text>
+                      {'  '}{a.title}
+                    </Text>
+                    {a.subtitle ? <Text style={st.actSub}>{a.subtitle}</Text> : null}
                   </View>
-                  <Text style={styles.notifTime}>{formatTime(n.createdAt)}</Text>
+                  <Text style={st.actDate}>{a.date}</Text>
                 </View>
               )
             })
           )}
         </View>
 
-        {/* ── Note : activité étudiants ── */}
-        <View style={styles.noteCard}>
-          <Ionicons name="construct-outline" size={16} color={COLORS.orange} />
-          <Text style={styles.noteText}>
-            L'activité récente de vos étudiants sera disponible après ajout de{' '}
-            <Text style={styles.noteCode}>GET /users/professor/activity</Text> par le backend.
-          </Text>
-        </View>
-
-        {/* ── Actions rapides ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actions rapides</Text>
-          <View style={styles.quickActionsRow}>
+        {/* ══ ACTIONS RAPIDES ══════════════════════════════════════════════ */}
+        <View style={st.section}>
+          <Text style={st.sectionTitle}>Actions rapides</Text>
+          <View style={st.quickRow}>
             {quickActions.map((a, i) => (
-              <QuickAction
+              <TouchableOpacity
                 key={i}
-                icon={a.icon}
-                label={a.label}
-                color={a.color}
+                style={st.quickCard}
                 onPress={() => onNavigate(a.screen)}
-              />
+                activeOpacity={0.75}
+              >
+                <View style={[st.quickBox, { backgroundColor: a.bg }]}>
+                  <Ionicons name={a.icon} size={26} color={a.color} />
+                </View>
+                <Text style={st.quickLbl}>{a.label}</Text>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        {/* ── Raccourcis étudiants ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mes étudiants</Text>
-            <TouchableOpacity onPress={() => onNavigate('etudiants')}>
-              <Text style={styles.seeAll}>Voir tout →</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            style={styles.shortcutRow}
-            onPress={() => onNavigate('etudiants')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.shortcutIcon, { backgroundColor: COLORS.primaryLight }]}>
-              <Ionicons name="people-outline" size={20} color={COLORS.primary} />
-            </View>
-            <View style={styles.shortcutContent}>
-              <Text style={styles.shortcutTitle}>Voir la liste complète</Text>
-              <Text style={styles.shortcutSub}>
-                {stats ? `${stats.totalStudents} étudiant${stats.totalStudents > 1 ? 's' : ''}` : 'Chargement...'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-          <View style={styles.separator} />
-          <TouchableOpacity
-            style={styles.shortcutRow}
-            onPress={() => onNavigate('analyses')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.shortcutIcon, { backgroundColor: COLORS.orange + '18' }]}>
-              <Ionicons name="bar-chart-outline" size={20} color={COLORS.orange} />
-            </View>
-            <View style={styles.shortcutContent}>
-              <Text style={styles.shortcutTitle}>Voir les analyses SAT</Text>
-              <Text style={styles.shortcutSub}>Statistiques et progression</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ height: 24 }} />
+        <View style={{ height: 36 }} />
       </ScrollView>
     </SafeAreaView>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flex: 1 },
+const st = StyleSheet.create({
+  safe:  { flex: 1, backgroundColor: C.bg },
+  scroll:{ flex: 1, backgroundColor: C.bg },
 
-  // Header
+  // ── Header ──────────────────────────────────────────────────────────
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4,
+    backgroundColor: C.bg,
   },
-  headerLeft:  { flex: 1 },
-  greeting:    { fontSize: 13, color: COLORS.textSecondary },
-  name:        { fontSize: 20, fontWeight: '800', color: COLORS.text, marginTop: 2 },
-  subtitle:    { fontSize: 12, color: COLORS.textSecondary, marginTop: 3 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
-  notifBtn:    { position: 'relative', padding: 2 },
-  notifBadge: {
-    position: 'absolute', top: -3, right: -3,
-    minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: COLORS.danger,
+  logo: {
+    width: 56, height: 56,
+  },
+  bellWrap:      { position: 'relative', padding: 4 },
+  bellBadge: {
+    position: 'absolute', top: 0, right: 0,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: C.red,
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: COLORS.white,
+    paddingHorizontal: 4,
+    borderWidth: 2, borderColor: C.white,
   },
-  notifBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800' },
-  avatar: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { color: COLORS.white, fontWeight: '800', fontSize: 14 },
+  bellBadgeText: { color: C.white, fontSize: 9, fontWeight: '900' },
 
-  // Stats
+  // ── Hero ────────────────────────────────────────────────────────────
+  hero: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 22,
+  },
+  heroLeft:     { flex: 1, paddingRight: 14 },
+  heroGreeting: { fontSize: 14, color: C.sub },
+  heroName:     { fontSize: 22, fontWeight: '900', color: C.text, marginTop: 2, lineHeight: 30 },
+  heroSub:      { fontSize: 12, color: C.sub, marginTop: 5, lineHeight: 18 },
+
+  // ── Stats ────────────────────────────────────────────────────────────
   statsRow: {
-    flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginTop: 12,
+    flexDirection: 'row', paddingHorizontal: 16, gap: 10,
   },
   statCard: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: 14,
-    padding: 12, alignItems: 'center', gap: 4,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+    flex: 1, backgroundColor: C.bg, borderRadius: 16,
+    paddingVertical: 14, paddingHorizontal: 6,
+    alignItems: 'center', gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07, shadowRadius: 4, elevation: 3,
   },
-  statCardGreen:  { backgroundColor: COLORS.primaryLight },
-  statIconBox:    { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  statValue:      { fontSize: 17, fontWeight: '800', color: COLORS.text },
-  statValueGreen: { color: COLORS.primary },
-  statLabel:      { fontSize: 10, color: COLORS.textSecondary, textAlign: 'center' },
-  statLabelGreen: { color: COLORS.primary },
+  statCircle: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statNum: { fontSize: 20, fontWeight: '900' },
+  statLbl: { fontSize: 10, color: C.sub, textAlign: 'center', lineHeight: 13 },
 
-  // Matières
-  matieresRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  matiereBadge: {
-    backgroundColor: COLORS.primaryLight, paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: COLORS.primary + '30',
+  // ── Section ──────────────────────────────────────────────────────────
+  section:     { marginTop: 26, paddingHorizontal: 20 },
+  sectionHead: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 14,
   },
-  matiereText:  { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: C.text },
+  seeAll:       { fontSize: 13, color: C.primary, fontWeight: '600' },
 
-  // Section
-  section: {
-    marginTop: 12, marginHorizontal: 16,
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  // ── Activité ─────────────────────────────────────────────────────────
+  emptyWrap: { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyTxt:  { fontSize: 14, color: C.sub },
+  actRow:    { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 14, gap: 12 },
+  actBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+  actCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
   },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14,
-  },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  sectionBadge: { color: COLORS.danger, fontWeight: '700' },
-  seeAll:       { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+  actBody:  { flex: 1 },
+  actTitle: { fontSize: 14, color: C.text, lineHeight: 20 },
+  actSub:   { fontSize: 12, color: C.sub, marginTop: 3 },
+  actDate:  { fontSize: 12, color: C.sub, flexShrink: 0, marginTop: 2 },
 
-  // Notifications
-  notifRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
+  // ── Actions rapides ──────────────────────────────────────────────────
+  quickRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  quickCard:{ flex: 1, alignItems: 'center', gap: 8 },
+  quickBox: {
+    width: 60, height: 60, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 3, elevation: 2,
   },
-  notifRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  notifIcon:    { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  notifContent: { flex: 1 },
-  notifTitle:   { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  notifSubtitle:{ fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
-  notifTime:    { fontSize: 11, color: COLORS.textSecondary },
-  emptyNotifs:  { alignItems: 'center', paddingVertical: 16, gap: 6 },
-  emptyNotifsText: { fontSize: 13, color: COLORS.textSecondary },
-
-  // Note backend
-  noteCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: '#FFF7ED', marginHorizontal: 16, marginTop: 12,
-    borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: COLORS.orange + '40',
+  quickLbl: {
+    fontSize: 11, color: C.sub,
+    textAlign: 'center', lineHeight: 15, fontWeight: '500',
   },
-  noteText: { flex: 1, fontSize: 12, color: COLORS.textSecondary, lineHeight: 17 },
-  noteCode: {
-    fontFamily: 'monospace', color: COLORS.primary,
-    fontSize: 11, fontWeight: '600',
-  },
-
-  // Quick actions
-  quickActionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  quickAction:     { alignItems: 'center', flex: 1 },
-  quickActionIcon: {
-    width: 52, height: 52, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
-  },
-  quickActionLabel: { fontSize: 11, color: COLORS.textSecondary, textAlign: 'center', fontWeight: '500' },
-
-  // Shortcuts
-  shortcutRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
-  },
-  shortcutIcon: {
-    width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-  },
-  shortcutContent: { flex: 1 },
-  shortcutTitle:   { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  shortcutSub:     { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
-  separator:       { height: 1, backgroundColor: COLORS.border, marginVertical: 2 },
 })

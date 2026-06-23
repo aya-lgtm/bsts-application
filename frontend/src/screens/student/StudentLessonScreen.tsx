@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const PRIMARY = '#0D6B5E';
 const GOLD = '#D4A017';
-const BG = '#F9FAFB';
+const BG = '#FFFFFF';
 const CARD = '#FFFFFF';
 const TEXT = '#111827';
 const MUTED = '#6B7280';

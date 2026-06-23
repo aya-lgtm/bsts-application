@@ -23,6 +23,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      ["expo-audio", { "microphonePermission": "Autoriser l'accès au micro" }],
       "expo-secure-store",
       "expo-splash-screen",
       "expo-font",
@@ -31,7 +32,9 @@
         {
           "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID for secure authentication."
         }
-      ]
+      ],
+      "expo-video",
+      "expo-audio"
     ],
     "extra": {
       "eas": {
