@@ -23,6 +23,10 @@ const LinkRequest = require('./LinkRequest');
 const SATQuestionHistory = require('./SATQuestionHistory');
 const CollegeStudent = require('./CollegeStudent');
 const Consultation = require('./Consultation');
+const SATUnit = require('./SATUnit');
+const SATLesson = require('./SATLesson');
+const SATLessonQuiz = require('./SATLessonQuiz');
+const SATProgress = require('./SATProgress');
 
 const syncDatabase = async () => {
   try {
@@ -41,7 +45,7 @@ module.exports = {
   Subscription,
   UserProfile,
   Subject,
-  Chapter,
+  Chapter,    
   Lesson,
   Progress,
   Quiz,
@@ -60,4 +64,8 @@ module.exports = {
   LinkRequest,
   CollegeStudent,
   Consultation,
+  SATUnit,
+  SATLesson,
+  SATLessonQuiz,
+  SATProgress
 };

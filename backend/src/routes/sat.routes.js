@@ -14,6 +14,16 @@ const {
   submitLevelTest,
   getUserLevel,
 } = require('../controllers/sat.controller');
+const {
+  getUnits,
+  getLessons,
+  completeLesson,
+  getLessonQuiz,
+  submitLessonQuiz,
+  createUnit,
+  createSATLesson,
+  addLessonQuiz,
+} = require('../controllers/satCourse.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
 // GET questions SAT avec filtres
@@ -30,6 +40,21 @@ router.post('/level/start', authenticate, startLevelTest);
 
 // POST soumettre le test de niveau
 router.post('/level/submit', authenticate, submitLevelTest);
+
+// GET unités selon niveau étudiant
+router.get('/units', authenticate, getUnits);
+
+// GET leçons d'une unité
+router.get('/units/:id/lessons', authenticate, getLessons);
+
+// POST marquer une leçon comme terminée
+router.post('/lessons/:id/complete', authenticate, completeLesson);
+
+// GET quiz d'une leçon
+router.get('/lessons/:id/quiz', authenticate, getLessonQuiz);
+
+// POST soumettre le quiz d'une leçon
+router.post('/lessons/:id/quiz/submit', authenticate, submitLessonQuiz);
 
 // POST démarrer une session SAT
 router.post('/sessions/start', authenticate, startSession);
@@ -51,5 +76,10 @@ router.get('/sections/:userId', authenticate, getSATSections);
 
 // POST ajouter une question SAT (ADMIN seulement)
 router.post('/questions', authenticate, authorize('ADMIN'), addSATQuestion);
+
+// Routes ADMIN — unités et leçons SAT
+router.post('/admin/units', authenticate, authorize('ADMIN'), createUnit);
+router.post('/admin/lessons', authenticate, authorize('ADMIN'), createSATLesson);
+router.post('/admin/lessons/:id/quiz', authenticate, authorize('ADMIN'), addLessonQuiz);
 
 module.exports = router;
