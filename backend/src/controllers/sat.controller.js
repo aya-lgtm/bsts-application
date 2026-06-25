@@ -22,8 +22,6 @@ const getQuestions = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
-// POST démarrer une session SAT
 const startSession = async (req, res) => {
   try {
     const { mode, domaine, totalQuestions } = req.body;
@@ -39,7 +37,6 @@ const startSession = async (req, res) => {
     let questions;
 
     if (mode === 'MISTAKES') {
-      // Récupérer les questions ratées précédemment
       const pastSessions = await SATSession.findAll({
         where: { userId, isCompleted: true },
         order: [['createdAt', 'DESC']],
@@ -54,9 +51,7 @@ const startSession = async (req, res) => {
           : pastSession.reponses;
 
         for (const [questionId, correction] of Object.entries(reponses)) {
-          if (!correction.estCorrecte) {
-            mistakeIds.add(questionId);
-          }
+          if (!correction.estCorrecte) mistakeIds.add(questionId);
         }
       }
 
@@ -73,16 +68,71 @@ const startSession = async (req, res) => {
         limit: totalQuestions || 10,
         attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
       });
-    } else {
-      const where = { isActive: true };
-      if (domaine && domaine !== 'ALL') where.domaine = domaine;
 
-      questions = await SATQuestion.findAll({
-        where,
-        limit: totalQuestions || 10,
-        order: SATQuestion.sequelize.literal('random()'),
-        attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+    } else {
+      const user = await User.findByPk(userId, { attributes: ['satLevel'] });
+      const level = user?.satLevel || 'INTERMEDIATE';
+
+      const difficultyPool = {
+        BEGINNER:     [{ diff: 'EASY', pct: 1.0 }],
+        INTERMEDIATE: [{ diff: 'EASY', pct: 0.6 }, { diff: 'MEDIUM', pct: 0.4 }],
+        ADVANCED:     [{ diff: 'MEDIUM', pct: 0.4 }, { diff: 'HARD', pct: 0.6 }],
+        EXPERT:       [{ diff: 'MEDIUM', pct: 0.2 }, { diff: 'HARD', pct: 0.8 }],
+      };
+
+      const pool = difficultyPool[level] || difficultyPool['INTERMEDIATE'];
+      const total = parseInt(totalQuestions) || 10;
+
+      const history = await SATQuestionHistory.findAll({
+        where: { studentId: userId },
+        attributes: ['questionId', 'lastSeenAt', 'timesWrong'],
+        order: [['lastSeenAt', 'ASC']],
       });
+      const seenIds = history.map(h => h.questionId);
+      const wrongIds = history.filter(h => h.timesWrong > 0).map(h => h.questionId);
+
+      questions = [];
+
+      for (const { diff, pct } of pool) {
+        const needed = Math.round(total * pct);
+        const baseWhere = {
+          isActive: true,
+          difficulte: diff,
+          ...(domaine && domaine !== 'ALL' ? { domaine } : {}),
+        };
+
+        const unseen = await SATQuestion.findAll({
+          where: { ...baseWhere, id: { [Op.notIn]: seenIds.length ? seenIds : ['none'] } },
+          limit: needed,
+          order: SATQuestion.sequelize.literal('random()'),
+          attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+        });
+        questions.push(...unseen);
+
+        if (questions.length < needed) {
+          const remaining = needed - questions.length;
+          const alreadyIds = questions.map(q => q.id);
+          const wrong = await SATQuestion.findAll({
+            where: { ...baseWhere, id: { [Op.in]: wrongIds.filter(id => !alreadyIds.includes(id)) } },
+            limit: remaining,
+            order: SATQuestion.sequelize.literal('random()'),
+            attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+          });
+          questions.push(...wrong);
+        }
+
+        if (questions.length < needed) {
+          const remaining = needed - questions.length;
+          const alreadyIds = questions.map(q => q.id);
+          const oldest = await SATQuestion.findAll({
+            where: { ...baseWhere, id: { [Op.notIn]: alreadyIds.length ? alreadyIds : ['none'] } },
+            limit: remaining,
+            order: SATQuestion.sequelize.literal('random()'),
+            attributes: { exclude: ['bonneReponse', 'explicationCorrecte', 'explicationIncorrecte'] },
+          });
+          questions.push(...oldest);
+        }
+      }
     }
 
     return res.status(201).json({ session, questions });
@@ -90,7 +140,6 @@ const startSession = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 // POST soumettre une session SAT
 const submitSession = async (req, res) => {
   try {
@@ -143,7 +192,34 @@ const submitSession = async (req, res) => {
     // Attribuer des points de gamification
     const pointsGagnes = session.mode === 'SIMULATED' ? 200 : 50;
     await attribuerPoints(userId, pointsGagnes);
+// Mettre à jour l'historique des questions vues
+    for (const question of questions) {
+      const reponseEleve = reponses[question.id];
+      const estCorrecte = reponseEleve === question.bonneReponse;
 
+      await SATQuestionHistory.upsert({
+        studentId: userId,
+        questionId: question.id,
+        lastSeenAt: new Date(),
+        timesCorrect: estCorrecte ? sequelize.literal('"timesCorrect" + 1') : sequelize.literal('"timesCorrect"'),
+        timesWrong: !estCorrecte ? sequelize.literal('"timesWrong" + 1') : sequelize.literal('"timesWrong"'),
+      });
+    }
+
+    // Recalculer le niveau automatiquement après chaque session
+    if (session.mode !== 'LEVEL_TEST') {
+      const user = await User.findByPk(userId, { attributes: ['satLevel'] });
+      if (user?.satLevel) {
+        const levels = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+        let newLevel = user.satLevel;
+        const idx = levels.indexOf(user.satLevel);
+        if (score >= 80 && idx < levels.length - 1) newLevel = levels[idx + 1];
+        else if (score <= 40 && idx > 0) newLevel = levels[idx - 1];
+        if (newLevel !== user.satLevel) {
+          await User.update({ satLevel: newLevel }, { where: { id: userId } });
+        }
+      }
+    }
     return res.status(200).json({
       message: 'Session terminée !',
       score,
