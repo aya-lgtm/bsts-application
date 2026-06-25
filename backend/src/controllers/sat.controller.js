@@ -229,9 +229,10 @@ const submitSession = async (req, res) => {
       corrections,
       pointsGagnes,
     });
-  } catch (error) {
+ } catch (error) {
+    console.error('❌ submitLevelTest error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
-  }
+  } 
 };
 
 // Fonction utilitaire pour attribuer des points
