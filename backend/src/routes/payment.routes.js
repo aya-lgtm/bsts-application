@@ -7,6 +7,7 @@ const {
   getPaymentHistory,
   getMySubscription,
   createPromoCode,
+  checkSubscriptionAccess,
 } = require('../controllers/payment.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -24,6 +25,9 @@ router.get('/history', authenticate, getPaymentHistory);
 
 // GET mon abonnement
 router.get('/subscription', authenticate, getMySubscription);
+
+// GET vérifier l'accès premium
+router.get('/subscription/access', authenticate, checkSubscriptionAccess);
 
 // POST créer un code promo (ADMIN)
 router.post('/promo', authenticate, authorize('ADMIN'), createPromoCode);

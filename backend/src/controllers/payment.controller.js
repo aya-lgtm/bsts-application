@@ -213,7 +213,30 @@ const createPromoCode = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET vérifier si l'utilisateur a accès au contenu premium
+const checkSubscriptionAccess = async (req, res) => {
+  try {
+    const userId = req.user.id;
 
+    const subscription = await Subscription.findOne({
+      where: { userId, status: 'ACTIVE' },
+    });
+
+    const now = new Date();
+    const isActive = subscription && 
+      subscription.plan !== 'FREE' && 
+      subscription.endDate && 
+      new Date(subscription.endDate) > now;
+
+    return res.status(200).json({
+      hasAccess: isActive,
+      plan: subscription?.plan ?? 'FREE',
+      endDate: subscription?.endDate ?? null,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   verifyPromoCode,
   createCheckoutSession,
@@ -221,4 +244,5 @@ module.exports = {
   getPaymentHistory,
   getMySubscription,
   createPromoCode,
+  checkSubscriptionAccess,
 };

@@ -99,21 +99,69 @@ const deleteChapter = async (req, res) => {
 const getLessonsByChapter = async (req, res) => {
   try {
     const { chapterId } = req.params;
+    const userId = req.user.id;
+
     const lessons = await Lesson.findAll({
       where: { chapterId, isActive: true },
       order: [['ordre', 'ASC']],
     });
-    return res.status(200).json({ lessons });
+
+    // Vérifier l'abonnement
+    const { Subscription } = require('../models');
+    const subscription = await Subscription.findOne({
+      where: { userId, status: 'ACTIVE' },
+    });
+
+    const now = new Date();
+    const hasAccess = subscription &&
+      subscription.plan !== 'FREE' &&
+      subscription.endDate &&
+      new Date(subscription.endDate) > now;
+
+    // Ajouter le champ isLocked pour chaque leçon
+    const lessonsWithAccess = lessons.map(l => ({
+      ...l.toJSON(),
+      isLocked: !l.isFree && !hasAccess,
+    }));
+
+    return res.status(200).json({ lessons: lessonsWithAccess });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 const getLessonById = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
+
     const lesson = await Lesson.findByPk(id);
     if (!lesson) return res.status(404).json({ message: 'Leçon non trouvée' });
+
+    // Si la leçon est gratuite, accès direct
+    if (lesson.isFree) {
+      return res.status(200).json({ lesson });
+    }
+
+    // Vérifier l'abonnement
+    const { Subscription } = require('../models');
+    const subscription = await Subscription.findOne({
+      where: { userId, status: 'ACTIVE' },
+    });
+
+    const now = new Date();
+    const hasAccess = subscription &&
+      subscription.plan !== 'FREE' &&
+      subscription.endDate &&
+      new Date(subscription.endDate) > now;
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: 'Contenu premium',
+        requiresSubscription: true,
+        lessonTitle: lesson.titre,
+      });
+    }
+
     return res.status(200).json({ lesson });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
