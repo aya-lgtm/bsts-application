@@ -8,10 +8,10 @@ const SATSession = sequelize.define('SATSession', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
-  mode: {
-    type: DataTypes.ENUM('FREE', 'SIMULATED', 'REVIEW', 'MISTAKES'),
-    allowNull: false,
-  },
+ mode: {
+  type: DataTypes.ENUM('FREE', 'SIMULATED', 'REVIEW', 'MISTAKES', 'CHALLENGE', 'MINI', 'LEVEL_TEST'),
+  allowNull: false,
+},
   domaine: {
     type: DataTypes.ENUM('MATH', 'READING', 'WRITING', 'ALL'),
     defaultValue: 'ALL',

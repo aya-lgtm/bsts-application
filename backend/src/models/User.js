@@ -79,6 +79,15 @@ otpExpires: {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  satLevel: {
+  type: DataTypes.ENUM('BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'),
+  allowNull: true,
+  defaultValue: null,
+},
+satLevelTestedAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
   isReported: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,

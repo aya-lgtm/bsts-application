@@ -20,6 +20,7 @@ const Payment = require('./Payment');
 const PromoCode = require('./PromoCode');
 const Notification = require('./Notification');
 const LinkRequest = require('./LinkRequest');
+const SATQuestionHistory = require('./SATQuestionHistory');
 const CollegeStudent = require('./CollegeStudent');
 const Consultation = require('./Consultation');
 
@@ -52,6 +53,7 @@ module.exports = {
   Conversation,
   Message,
   ConversationMember,
+  SATQuestionHistory,
   Payment,
   PromoCode,
   Notification,

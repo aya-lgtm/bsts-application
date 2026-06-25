@@ -10,6 +10,9 @@ const {
   getSATSections,
   getParentSATProgress,
   getMistakes,
+  startLevelTest,
+  submitLevelTest,
+  getUserLevel,
 } = require('../controllers/sat.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -18,6 +21,15 @@ router.get('/questions', authenticate, getQuestions);
 
 // GET questions ratées (mode erreurs)
 router.get('/mistakes', authenticate, getMistakes);
+
+// GET niveau actuel
+router.get('/level', authenticate, getUserLevel);
+
+// POST démarrer le test de niveau
+router.post('/level/start', authenticate, startLevelTest);
+
+// POST soumettre le test de niveau
+router.post('/level/submit', authenticate, submitLevelTest);
 
 // POST démarrer une session SAT
 router.post('/sessions/start', authenticate, startSession);

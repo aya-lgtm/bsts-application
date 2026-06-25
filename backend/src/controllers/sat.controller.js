@@ -1,5 +1,6 @@
-const { SATQuestion, SATSession, Gamification, User, Quiz, QuizResult } = require('../models');
+const { SATQuestion, SATSession, SATQuestionHistory, Gamification, User, Quiz, QuizResult } = require('../models');
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
 // GET questions SAT avec filtres
 const getQuestions = async (req, res) => {
   try {
@@ -456,4 +457,154 @@ const getMistakes = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-module.exports = { getQuestions, startSession, submitSession, getStats, addSATQuestion, attribuerPoints, getSATProgress, getSATSections, getParentSATProgress, getMistakes };
+// POST démarrer le test de niveau
+const startLevelTest = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const easyQs = await SATQuestion.findAll({
+      where: { isActive: true, difficulte: 'EASY' },
+      limit: 5,
+      order: SATQuestion.sequelize.literal('random()'),
+    });
+    const mediumQs = await SATQuestion.findAll({
+      where: { isActive: true, difficulte: 'MEDIUM' },
+      limit: 8,
+      order: SATQuestion.sequelize.literal('random()'),
+    });
+    const hardQs = await SATQuestion.findAll({
+      where: { isActive: true, difficulte: 'HARD' },
+      limit: 7,
+      order: SATQuestion.sequelize.literal('random()'),
+    });
+
+    const questions = [...easyQs, ...mediumQs, ...hardQs];
+
+    const session = await SATSession.create({
+      userId,
+      mode: 'LEVEL_TEST',
+      domaine: 'ALL',
+      totalQuestions: questions.length,
+    });
+
+    const safeQuestions = questions.map(q => ({
+      id: q.id,
+      enonce: q.enonce,
+      choixA: q.choixA,
+      choixB: q.choixB,
+      choixC: q.choixC,
+      choixD: q.choixD,
+      domaine: q.domaine,
+      difficulte: q.difficulte,
+    }));
+
+    return res.status(201).json({ session, questions: safeQuestions });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST soumettre le test de niveau
+const submitLevelTest = async (req, res) => {
+  try {
+    const { sessionId, reponses } = req.body;
+    const userId = req.user.id;
+
+    const session = await SATSession.findByPk(sessionId);
+    if (!session || session.userId !== userId) {
+      return res.status(404).json({ message: 'Session non trouvée' });
+    }
+
+    const questionIds = Object.keys(reponses);
+    const questions = await SATQuestion.findAll({
+      where: { id: { [Op.in]: questionIds } },
+    });
+
+    let easyTotal = 0, easyCorrect = 0;
+    let mediumTotal = 0, mediumCorrect = 0;
+    let hardTotal = 0, hardCorrect = 0;
+    let totalCorrect = 0;
+
+    for (const question of questions) {
+      const isCorrect = reponses[question.id] === question.bonneReponse;
+      if (isCorrect) totalCorrect++;
+
+      if (question.difficulte === 'EASY') {
+        easyTotal++; if (isCorrect) easyCorrect++;
+      } else if (question.difficulte === 'MEDIUM') {
+        mediumTotal++; if (isCorrect) mediumCorrect++;
+      } else if (question.difficulte === 'HARD') {
+        hardTotal++; if (isCorrect) hardCorrect++;
+      }
+    }
+
+    const easyRate   = easyTotal   > 0 ? easyCorrect   / easyTotal   : 0;
+    const mediumRate = mediumTotal  > 0 ? mediumCorrect / mediumTotal  : 0;
+    const hardRate   = hardTotal    > 0 ? hardCorrect   / hardTotal    : 0;
+
+    let satLevel;
+    if (easyRate >= 0.8 && mediumRate >= 0.6 && hardRate >= 0.4) {
+      satLevel = 'EXPERT';
+    } else if (easyRate >= 0.8 && mediumRate >= 0.5) {
+      satLevel = 'ADVANCED';
+    } else if (easyRate >= 0.6) {
+      satLevel = 'INTERMEDIATE';
+    } else {
+      satLevel = 'BEGINNER';
+    }
+
+    const score = Math.round((totalCorrect / questions.length) * 100);
+    const scoreSAT = Math.round(400 + (score / 100) * 1200);
+
+    await User.update(
+      { satLevel, satLevelTestedAt: new Date() },
+      { where: { id: userId } }
+    );
+
+    await session.update({
+      score,
+      scoreSAT,
+      bonnesReponses: totalCorrect,
+      isCompleted: true,
+    });
+
+    return res.status(200).json({
+      satLevel,
+      score,
+      scoreSAT,
+      totalCorrect,
+      totalQuestions: questions.length,
+      breakdown: {
+        easy:   { correct: easyCorrect,   total: easyTotal,   rate: Math.round(easyRate * 100) },
+        medium: { correct: mediumCorrect, total: mediumTotal, rate: Math.round(mediumRate * 100) },
+        hard:   { correct: hardCorrect,   total: hardTotal,   rate: Math.round(hardRate * 100) },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// GET récupérer le niveau actuel de l'utilisateur
+const getUserLevel = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findByPk(userId, {
+      attributes: ['satLevel', 'satLevelTestedAt'],
+    });
+    return res.status(200).json({
+      satLevel: user.satLevel,
+      satLevelTestedAt: user.satLevelTestedAt,
+      hasTakenTest: !!user.satLevel,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+module.exports = {
+  getQuestions, startSession, submitSession,
+  getStats, addSATQuestion, attribuerPoints,
+  getSATProgress, getSATSections,
+  getParentSATProgress, getMistakes,
+  startLevelTest, submitLevelTest, getUserLevel,
+};
