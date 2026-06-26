@@ -162,9 +162,112 @@ const addLessonQuiz = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET /sat/units/:id/test — SAT Blanc (test de l'unité)
+const getUnitTest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const unit = await SATUnit.findByPk(id);
+    if (!unit) return res.status(404).json({ message: 'Unité non trouvée' });
+
+    // Vérifier que toutes les leçons sont complétées
+    const totalLessons = await SATLesson.count({ where: { unitId: id, isActive: true } });
+    const completedLessons = await SATProgress.count({
+      where: { userId, unitId: id, type: 'LESSON', isCompleted: true },
+    });
+
+    if (completedLessons < totalLessons) {
+      return res.status(403).json({
+        message: 'Terminez toutes les leçons avant de passer le SAT Blanc',
+        completed: completedLessons,
+        total: totalLessons,
+      });
+    }
+
+    // Récupérer toutes les questions des quiz de cette unité
+    const lessons = await SATLesson.findAll({ where: { unitId: id, isActive: true } });
+    const lessonIds = lessons.map(l => l.id);
+
+    const questions = await SATLessonQuiz.findAll({
+      where: { lessonId: lessonIds },
+      attributes: { exclude: ['bonneReponse', 'explication'] },
+    });
+
+    return res.status(200).json({
+      unit,
+      questions,
+      dureeMinutes: 25,
+      totalQuestions: questions.length,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// POST /sat/units/:id/test/submit — soumettre le SAT Blanc
+const submitUnitTest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reponses } = req.body;
+    const userId = req.user.id;
+
+    const unit = await SATUnit.findByPk(id);
+    if (!unit) return res.status(404).json({ message: 'Unité non trouvée' });
+
+    const lessons = await SATLesson.findAll({ where: { unitId: id, isActive: true } });
+    const lessonIds = lessons.map(l => l.id);
+
+    const questions = await SATLessonQuiz.findAll({
+      where: { lessonId: lessonIds },
+    });
+
+    let correct = 0;
+    const corrections = {};
+
+    questions.forEach(q => {
+      const isOk = reponses[q.id] === q.bonneReponse;
+      if (isOk) correct++;
+      corrections[q.id] = {
+        reponseEleve: reponses[q.id],
+        bonneReponse: q.bonneReponse,
+        estCorrecte: isOk,
+        explication: q.explication,
+      };
+    });
+
+    const score = Math.round((correct / questions.length) * 100);
+    const scoreSAT = Math.round(400 + (score / 100) * 1200);
+
+    // Sauvegarder le résultat
+    await SATProgress.upsert({
+      userId,
+      unitId: id,
+      type: 'UNIT_TEST',
+      isCompleted: score >= 60,
+      score,
+      scoreSAT,
+    });
+
+    // Attribuer des points
+    await attribuerPoints(userId, score >= 60 ? 100 : 30);
+
+    return res.status(200).json({
+      score,
+      scoreSAT,
+      correct,
+      total: questions.length,
+      isPassed: score >= 60,
+      corrections,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 
 module.exports = {
   getUnits, getLessons, completeLesson,
   getLessonQuiz, submitLessonQuiz,
   createUnit, createSATLesson, addLessonQuiz,
+  getUnitTest, submitUnitTest
 };

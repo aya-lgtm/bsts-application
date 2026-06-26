@@ -23,6 +23,8 @@ const {
   createUnit,
   createSATLesson,
   addLessonQuiz,
+  getUnitTest,
+  submitUnitTest,
 } = require('../controllers/satCourse.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -46,6 +48,12 @@ router.get('/units', authenticate, getUnits);
 
 // GET leçons d'une unité
 router.get('/units/:id/lessons', authenticate, getLessons);
+
+// GET SAT Blanc d'une unité
+router.get('/units/:id/test', authenticate, getUnitTest);
+
+// POST soumettre le SAT Blanc
+router.post('/units/:id/test/submit', authenticate, submitUnitTest);
 
 // POST marquer une leçon comme terminée
 router.post('/lessons/:id/complete', authenticate, completeLesson);
