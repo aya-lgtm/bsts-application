@@ -8,20 +8,36 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Storage pour les vidéos et PDFs des cours
+// Storage pour les vidéos, PDFs et Word des cours
 const courseStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
     const isPDF = file.mimetype === 'application/pdf';
+    const isWord = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                   file.mimetype === 'application/msword';
     return {
       folder: 'bsts/courses',
-      resource_type: isPDF ? 'raw' : 'video',
-      format: isPDF ? 'pdf' : undefined,
+      resource_type: 'raw',
+      format: isPDF ? 'pdf' : isWord ? 'docx' : undefined,
     };
   },
 });
 
-// Storage pour les fichiers du chat (images/PDFs/vidéos/audios)
+const uploadCourse = multer({
+  storage: courseStorage,
+  limits: { fileSize: 500 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'video/mp4', 'video/mkv', 'video/quicktime',
+    ];
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Type non autorisé'));
+  },
+});
+
+// Storage pour les fichiers du chat
 const chatStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
@@ -32,7 +48,7 @@ const chatStorage = new CloudinaryStorage({
     let resource_type = 'image';
     if (isPDF) resource_type = 'raw';
     else if (isVideo) resource_type = 'video';
-    else if (isAudio) resource_type = 'video'; // Cloudinary gère l'audio comme vidéo
+    else if (isAudio) resource_type = 'video';
 
     return {
       folder: 'bsts/chat',
@@ -41,14 +57,9 @@ const chatStorage = new CloudinaryStorage({
   },
 });
 
-const uploadCourse = multer({
-  storage: courseStorage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500 Mo
-});
-
 const uploadChat = multer({
   storage: chatStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 Mo
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
