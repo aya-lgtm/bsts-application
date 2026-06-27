@@ -99,21 +99,38 @@ router.post('/admin/lessons/:id/upload', authenticate, authorize('ADMIN', 'PROFE
     const { id } = req.params;
     const fileUrl = req.file.path;
     const mimetype = req.file.mimetype;
+    const originalname = req.file.originalname?.toLowerCase() || '';
+
+    console.log('📁 Fichier reçu:', { mimetype, originalname, fileUrl });
 
     const { SATLesson } = require('../models');
     const lesson = await SATLesson.findByPk(id);
     if (!lesson) return res.status(404).json({ message: 'Leçon non trouvée' });
 
-    if (mimetype === 'application/pdf' || mimetype.includes('word')) {
-      await lesson.update({ pdfUrl: fileUrl, type: 'PDF' });
-    } else if (mimetype.startsWith('video/')) {
-      await lesson.update({ videoUrl: fileUrl, type: 'VIDEO' });
+    let newType = lesson.type;
+    let updateData = {};
+
+    if (mimetype === 'application/pdf' || originalname.endsWith('.pdf')) {
+      updateData = { pdfUrl: fileUrl, type: 'PDF' };
+      newType = 'PDF';
+    } else if (mimetype.includes('word') || originalname.endsWith('.docx') || originalname.endsWith('.doc')) {
+      updateData = { pdfUrl: fileUrl, type: 'PDF' };
+      newType = 'PDF';
+    } else if (mimetype.startsWith('video/') || originalname.endsWith('.mp4') || originalname.endsWith('.mov')) {
+      updateData = { videoUrl: fileUrl, type: 'VIDEO' };
+      newType = 'VIDEO';
+    } else {
+      // Fallback : stocker comme PDF
+      updateData = { pdfUrl: fileUrl, type: 'PDF' };
+      newType = 'PDF';
     }
+
+    await lesson.update(updateData);
 
     return res.status(200).json({
       message: 'Fichier uploadé et leçon mise à jour !',
       url: fileUrl,
-      type: lesson.type,
+      type: newType,
     });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
