@@ -150,14 +150,34 @@ const createSATLesson = async (req, res) => {
 };
 
 // POST /sat/admin/lessons/:id/quiz — ajouter une question (ADMIN)
+// POST /sat/admin/lessons/:id/quiz — ajouter plusieurs questions (ADMIN)
 const addLessonQuiz = async (req, res) => {
   try {
-    const { enonce, choixA, choixB, choixC, choixD, bonneReponse, explication } = req.body;
-    const question = await SATLessonQuiz.create({
-      lessonId: req.params.id,
-      enonce, choixA, choixB, choixC, choixD, bonneReponse, explication,
+    const { questions } = req.body;
+
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ message: 'Aucune question fournie' });
+    }
+
+    const created = [];
+    for (const q of questions) {
+      const question = await SATLessonQuiz.create({
+        lessonId: req.params.id,
+        enonce: q.enonce,
+        choixA: q.choixA,
+        choixB: q.choixB,
+        choixC: q.choixC,
+        choixD: q.choixD,
+        bonneReponse: q.bonneReponse,
+        explication: q.explication,
+      });
+      created.push(question);
+    }
+
+    return res.status(201).json({
+      message: `${created.length} question(s) ajoutée(s) !`,
+      questions: created,
     });
-    return res.status(201).json({ message: 'Question ajoutée !', question });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
