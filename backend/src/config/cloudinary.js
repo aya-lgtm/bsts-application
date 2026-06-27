@@ -15,9 +15,10 @@ const courseStorage = new CloudinaryStorage({
     const isPDF = file.mimetype === 'application/pdf';
     const isWord = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
                    file.mimetype === 'application/msword';
+    const isVideo = file.mimetype.startsWith('video/');
     return {
       folder: 'bsts/courses',
-      resource_type: 'raw',
+      resource_type: isVideo ? 'video' : 'raw',
       format: isPDF ? 'pdf' : isWord ? 'docx' : undefined,
     };
   },
@@ -27,13 +28,7 @@ const uploadCourse = multer({
   storage: courseStorage,
   limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'video/mp4', 'video/mkv', 'video/quicktime',
-    ];
-    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Type non autorisé'));
+    cb(null, true); // Accepter tous les types
   },
 });
 
@@ -61,13 +56,7 @@ const uploadChat = multer({
   storage: chatStorage,
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = [
-      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-      'video/mp4', 'video/quicktime', 'video/avi',
-      'audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-m4a',
-      'application/pdf',
-    ];
-    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Type non autorisé'));
+    cb(null, true); // Accepter tous les types
   },
 });
 

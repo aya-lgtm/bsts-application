@@ -12,6 +12,11 @@ const Question = require('./Question');
 const QuizResult = require('./QuizResult');
 const SATQuestion = require('./SATQuestion');
 const SATSession = require('./SATSession');
+const SATQuestionHistory = require('./SATQuestionHistory');
+const SATUnit = require('./SATUnit');
+const SATLesson = require('./SATLesson');
+const SATLessonQuiz = require('./SATLessonQuiz');
+const SATProgress = require('./SATProgress');
 const Gamification = require('./Gamification');
 const Conversation = require('./Conversation');
 const Message = require('./Message');
@@ -20,13 +25,14 @@ const Payment = require('./Payment');
 const PromoCode = require('./PromoCode');
 const Notification = require('./Notification');
 const LinkRequest = require('./LinkRequest');
-const SATQuestionHistory = require('./SATQuestionHistory');
 const CollegeStudent = require('./CollegeStudent');
 const Consultation = require('./Consultation');
-const SATUnit = require('./SATUnit');
-const SATLesson = require('./SATLesson');
-const SATLessonQuiz = require('./SATLessonQuiz');
-const SATProgress = require('./SATProgress');
+const ChapterQuiz = require('./ChapterQuiz');
+const ChapterQuizQuestion = require('./ChapterQuizQuestion');
+const ChapterQuizResult = require('./ChapterQuizResult');
+const SubjectExam = require('./SubjectExam');
+const SubjectExamQuestion = require('./SubjectExamQuestion');
+const SubjectExamResult = require('./SubjectExamResult');
 
 const syncDatabase = async () => {
   try {
@@ -38,34 +44,16 @@ const syncDatabase = async () => {
 };
 
 module.exports = {
-  sequelize,
-  syncDatabase,
-  User,
-  RefreshToken,
-  Subscription,
-  UserProfile,
-  Subject,
-  Chapter,    
-  Lesson,
-  Progress,
-  Quiz,
-  Question,
-  QuizResult,
-  SATQuestion,
-  SATSession,
+  sequelize, syncDatabase,
+  User, RefreshToken, Subscription, UserProfile,
+  Subject, Chapter, Lesson, Progress,
+  Quiz, Question, QuizResult,
+  SATQuestion, SATSession, SATQuestionHistory,
+  SATUnit, SATLesson, SATLessonQuiz, SATProgress,
   Gamification,
-  Conversation,
-  Message,
-  ConversationMember,
-  SATQuestionHistory,
-  Payment,
-  PromoCode,
-  Notification,
-  LinkRequest,
-  CollegeStudent,
-  Consultation,
-  SATUnit,
-  SATLesson,
-  SATLessonQuiz,
-  SATProgress
+  Conversation, Message, ConversationMember,
+  Payment, PromoCode, Notification, LinkRequest,
+  CollegeStudent, Consultation,
+  ChapterQuiz, ChapterQuizQuestion, ChapterQuizResult,
+  SubjectExam, SubjectExamQuestion, SubjectExamResult,
 };
