@@ -31,8 +31,13 @@ const User = sequelize.define('User', {
     allowNull: false,
   },
   role: {
-    type: DataTypes.ENUM('STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN'),
+    type: DataTypes.ENUM('STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN', 'COLLEGE_STUDENT'),
     defaultValue: 'STUDENT',
+  },
+  studentType: {
+    type: DataTypes.ENUM('ON_SITE', 'REMOTE'),
+    allowNull: true,
+    defaultValue: null,
   },
   isActive: {
     type: DataTypes.BOOLEAN,
@@ -47,18 +52,18 @@ const User = sequelize.define('User', {
     allowNull: true,
   },
   matieres: {
-  type: DataTypes.ARRAY(DataTypes.STRING),
-  allowNull: true,
-  defaultValue: [],
-},
-fcmToken: {
-  type: DataTypes.STRING,
-  allowNull: true,
-},
-chatSuspendedUntil: {
-  type: DataTypes.DATE,
-  allowNull: true,
-},
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    allowNull: true,
+    defaultValue: [],
+  },
+  fcmToken: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  chatSuspendedUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
   parentId: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -75,19 +80,19 @@ chatSuspendedUntil: {
     type: DataTypes.STRING,
     allowNull: true,
   },
-otpExpires: {
+  otpExpires: {
     type: DataTypes.DATE,
     allowNull: true,
   },
   satLevel: {
-  type: DataTypes.ENUM('BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'),
-  allowNull: true,
-  defaultValue: null,
-},
-satLevelTestedAt: {
-  type: DataTypes.DATE,
-  allowNull: true,
-},
+    type: DataTypes.ENUM('BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'),
+    allowNull: true,
+    defaultValue: null,
+  },
+  satLevelTestedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
   isReported: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
