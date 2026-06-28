@@ -171,17 +171,31 @@ const submitSession = async (req, res) => {
     const pointsGagnes = session.mode === 'SIMULATED' ? 200 : 50;
     await attribuerPoints(userId, pointsGagnes);
 
-    for (const question of questions) {
-      const reponseEleve = reponses[question.id];
-      const estCorrecte = reponseEleve === question.bonneReponse;
-      await SATQuestionHistory.upsert({
-        studentId: userId,
-        questionId: question.id,
-        lastSeenAt: new Date(),
-        timesCorrect: estCorrecte ? sequelize.literal('"timesCorrect" + 1') : sequelize.literal('"timesCorrect"'),
-        timesWrong: !estCorrecte ? sequelize.literal('"timesWrong" + 1') : sequelize.literal('"timesWrong"'),
-      });
-    }
+  // Mettre à jour l'historique des questions vues
+for (const question of questions) {
+  const reponseEleve = reponses[question.id];
+  const estCorrecte = reponseEleve === question.bonneReponse;
+
+  const existing = await SATQuestionHistory.findOne({
+    where: { studentId: userId, questionId: question.id },
+  });
+
+  if (existing) {
+    await existing.update({
+      lastSeenAt: new Date(),
+      timesCorrect: estCorrecte ? existing.timesCorrect + 1 : existing.timesCorrect,
+      timesWrong: !estCorrecte ? existing.timesWrong + 1 : existing.timesWrong,
+    });
+  } else {
+    await SATQuestionHistory.create({
+      studentId: userId,
+      questionId: question.id,
+      lastSeenAt: new Date(),
+      timesCorrect: estCorrecte ? 1 : 0,
+      timesWrong: !estCorrecte ? 1 : 0,
+    });
+  }
+}
 
     if (session.mode !== 'LEVEL_TEST') {
       const user = await User.findByPk(userId, { attributes: ['satLevel'] });
