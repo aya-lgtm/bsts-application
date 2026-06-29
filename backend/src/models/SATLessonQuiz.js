@@ -1,20 +1,22 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
-const SATLesson = require('./SATLesson');
+const SATUnit = require('./SATUnit');
 
-const SATLessonQuiz = sequelize.define('SATLessonQuiz', {
+const SATLesson = sequelize.define('SATLesson', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  lessonId: { type: DataTypes.UUID, allowNull: false },
-  enonce: { type: DataTypes.TEXT, allowNull: false },
-  choixA: DataTypes.STRING,
-  choixB: DataTypes.STRING,
-  choixC: DataTypes.STRING,
-  choixD: DataTypes.STRING,
-  bonneReponse: { type: DataTypes.ENUM('A', 'B', 'C', 'D'), allowNull: false },
-  explication: { type: DataTypes.TEXT },
-}, { tableName: 'sat_lesson_quizzes', timestamps: true });
+  unitId: { type: DataTypes.UUID, allowNull: false },
+  titre: { type: DataTypes.STRING, allowNull: false },
+  ordre: { type: DataTypes.INTEGER, defaultValue: 0 },
+  type: { type: DataTypes.ENUM('VIDEO', 'PDF', 'TEXT'), allowNull: false },
+  contenu: { type: DataTypes.TEXT },
+  videoUrl: { type: DataTypes.STRING },
+  pdfUrl: { type: DataTypes.STRING },
+  dureeMinutes: { type: DataTypes.INTEGER },
+  passingScore: { type: DataTypes.INTEGER, defaultValue: 60 }, // Prof peut choisir
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+}, { tableName: 'sat_lessons', timestamps: true });
 
-SATLessonQuiz.belongsTo(SATLesson, { foreignKey: 'lessonId' });
-SATLesson.hasMany(SATLessonQuiz, { foreignKey: 'lessonId' });
+SATLesson.belongsTo(SATUnit, { foreignKey: 'unitId' });
+SATUnit.hasMany(SATLesson, { foreignKey: 'unitId' });
 
-module.exports = SATLessonQuiz;
+module.exports = SATLesson;

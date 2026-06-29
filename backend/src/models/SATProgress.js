@@ -13,6 +13,7 @@ const SATProgress = sequelize.define('SATProgress', {
   isCompleted: { type: DataTypes.BOOLEAN, defaultValue: false },
   score: { type: DataTypes.INTEGER },
   scoreSAT: { type: DataTypes.INTEGER },
+  quizPassed: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, { tableName: 'sat_progress', timestamps: true });
 
 SATProgress.belongsTo(User, { foreignKey: 'userId' });
