@@ -15,11 +15,27 @@ const getUnits = async (req, res) => {
     const units = await SATUnit.findAll({ where, order: [['ordre', 'ASC']] });
 
     const unitsWithProgress = await Promise.all(units.map(async (unit) => {
-      const lessonsTotal = await SATLesson.count({ where: { unitId: unit.id, isActive: true } });
-      const lessonsCompleted = await SATProgress.count({
-        where: { userId, unitId: unit.id, type: 'LESSON', isCompleted: true },
+      const lessonsTotal = await SATLesson.count({
+        where: { unitId: unit.id, isActive: true },
       });
-      return { ...unit.toJSON(), lessonsTotal, lessonsCompleted };
+
+      const lessonsCompleted = await SATProgress.count({
+        where: {
+          userId,
+          unitId: unit.id,
+          type: 'LESSON', // IMPORTANT : seulement LESSON, pas QUIZ
+          isCompleted: true,
+        },
+      });
+
+      // Sécurité : ne jamais dépasser le total
+      const safeLessonsCompleted = Math.min(lessonsCompleted, lessonsTotal);
+
+      return {
+        ...unit.toJSON(),
+        lessonsTotal,
+        lessonsCompleted: safeLessonsCompleted,
+      };
     }));
 
     return res.json({ units: unitsWithProgress });
