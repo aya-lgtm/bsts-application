@@ -1,5 +1,6 @@
 const { SATUnit, SATLesson, SATLessonQuiz, SATProgress, User } = require('../models');
 const { attribuerPoints } = require('./sat.controller');
+const { Op } = require('sequelize');
 
 // GET /sat/units — unités selon niveau étudiant
 const getUnits = async (req, res) => {
@@ -23,12 +24,12 @@ const getUnits = async (req, res) => {
         where: {
           userId,
           unitId: unit.id,
-          type: 'LESSON', // IMPORTANT : seulement LESSON, pas QUIZ
+          type: 'LESSON',
           isCompleted: true,
+          lessonId: { [Op.ne]: null },
         },
       });
 
-      // Sécurité : ne jamais dépasser le total
       const safeLessonsCompleted = Math.min(lessonsCompleted, lessonsTotal);
 
       return {
