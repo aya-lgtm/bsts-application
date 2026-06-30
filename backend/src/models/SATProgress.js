@@ -1,8 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./User');
-const SATLesson = require('./SATLesson');
-const SATUnit = require('./SATUnit');
 
 const SATProgress = sequelize.define('SATProgress', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
@@ -17,7 +15,5 @@ const SATProgress = sequelize.define('SATProgress', {
 }, { tableName: 'sat_progress', timestamps: true });
 
 SATProgress.belongsTo(User, { foreignKey: 'userId' });
-SATProgress.belongsTo(SATLesson, { foreignKey: 'lessonId' });
-SATProgress.belongsTo(SATUnit, { foreignKey: 'unitId' });
 
 module.exports = SATProgress;
