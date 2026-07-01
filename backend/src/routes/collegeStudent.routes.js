@@ -10,6 +10,8 @@ const {
   getMyConsultations,
   getParentConsultations,
   confirmConsultationPayment,
+  getMyProfile,
+  updateMyProfile,
 } = require('../controllers/collegeStudent.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -39,5 +41,9 @@ router.get('/consultations/parent', authenticate, authorize('PARENT'), getParent
 
 // PUT confirmer paiement
 router.put('/consultations/:consultationId/confirm-payment', authenticate, confirmConsultationPayment);
+// GET mon profil (COLLEGE_STUDENT)
+router.get('/me', authenticate, authorize('COLLEGE_STUDENT'), getMyProfile);
 
+// PUT mettre à jour mon profil (COLLEGE_STUDENT)
+router.put('/me', authenticate, authorize('COLLEGE_STUDENT'), updateMyProfile);
 module.exports = router;
