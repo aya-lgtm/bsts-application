@@ -30,10 +30,10 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: false,
   },
-  role: {
-    type: DataTypes.ENUM('STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN', 'COLLEGE_STUDENT'),
-    defaultValue: 'STUDENT',
-  },
+role: {
+  type: DataTypes.ENUM('STUDENT', 'PROFESSOR', 'PARENT', 'ADMIN', 'COLLEGE_STUDENT', 'SUPER_ADMIN'),
+  defaultValue: 'STUDENT',
+},
   studentType: {
     type: DataTypes.ENUM('ON_SITE', 'REMOTE'),
     allowNull: true,

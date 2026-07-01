@@ -17,6 +17,7 @@ const gamificationRoutes = require('./routes/gamification.routes');
 const chatRoutes = require('./routes/chat.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const adminRoutes = require('./routes/admin.routes');
 const collegeStudentRoutes = require('./routes/collegeStudent.routes');
 // Initialiser Sentry
 initSentry();
@@ -56,6 +57,7 @@ app.use('/api/v1/gamification', gamificationRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/payment', paymentRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/college-students', collegeStudentRoutes);
 // Route de test
 app.get('/', (req, res) => {

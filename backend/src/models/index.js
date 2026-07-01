@@ -33,7 +33,7 @@ const ChapterQuizResult = require('./ChapterQuizResult');
 const SubjectExam = require('./SubjectExam');
 const SubjectExamQuestion = require('./SubjectExamQuestion');
 const SubjectExamResult = require('./SubjectExamResult');
-
+const Report = require('./Report');
 const syncDatabase = async () => {
   try {
     await sequelize.sync({ alter: true });
@@ -56,4 +56,5 @@ module.exports = {
   CollegeStudent, Consultation,
   ChapterQuiz, ChapterQuizQuestion, ChapterQuizResult,
   SubjectExam, SubjectExamQuestion, SubjectExamResult,
+  Report,
 };
