@@ -198,14 +198,17 @@ const confirmConsultationPayment = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-// GET mon profil (COLLEGE_STUDENT connecté)
+
+// GET mon profil (COLLEGE_STUDENT)
 const getMyProfile = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, { attributes: ['email'] });
+    const userId = req.user.id;
+    // Le college student est lié via email à un User
+    const user = await User.findByPk(userId, { attributes: ['email'] });
     if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
     const student = await CollegeStudent.findOne({ where: { email: user.email } });
-    if (!student) return res.status(404).json({ message: 'Profil college student non trouvé' });
+    if (!student) return res.status(404).json({ message: 'Profil non trouvé' });
 
     return res.status(200).json({ student });
   } catch (error) {
@@ -213,29 +216,26 @@ const getMyProfile = async (req, res) => {
   }
 };
 
-// PUT mettre à jour mon profil (COLLEGE_STUDENT connecté)
+// PUT modifier mon profil (COLLEGE_STUDENT)
 const updateMyProfile = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, { attributes: ['email'] });
+    const userId = req.user.id;
+    const user = await User.findByPk(userId, { attributes: ['email'] });
     if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
     const student = await CollegeStudent.findOne({ where: { email: user.email } });
-    if (!student) return res.status(404).json({ message: 'Profil college student non trouvé' });
+    if (!student) return res.status(404).json({ message: 'Profil non trouvé' });
 
-    const { disponibilites, bio, photo } = req.body;
-    const updateData = {};
-    if (disponibilites !== undefined) updateData.disponibilites = disponibilites;
-    if (bio !== undefined) updateData.bio = bio;
-    if (photo !== undefined) updateData.photo = photo;
+    const allowed = ['bio', 'photo', 'prixParHeure', 'prixParDemiHeure', 'disponibilites'];
+    const updates = {};
+    allowed.forEach(field => { if (req.body[field] !== undefined) updates[field] = req.body[field]; });
 
-    await student.update(updateData);
-
+    await student.update(updates);
     return res.status(200).json({ message: 'Profil mis à jour !', student });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 
 module.exports = {
   getAllCollegeStudents,
