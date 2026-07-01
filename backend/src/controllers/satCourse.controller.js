@@ -19,27 +19,26 @@ const getUnits = async (req, res) => {
       const lessonsTotal = await SATLesson.count({
         where: { unitId: unit.id, isActive: true },
       });
-
       const lessonsCompleted = await SATProgress.count({
-        where: {
-          userId,
-          unitId: unit.id,
-          type: 'LESSON',
-          isCompleted: true,
-          lessonId: { [Op.ne]: null },
-        },
+        where: { userId, unitId: unit.id, type: 'LESSON', isCompleted: true },
       });
-
-      const safeLessonsCompleted = Math.min(lessonsCompleted, lessonsTotal);
+      const quizCompleted = await SATProgress.count({
+        where: { userId, unitId: unit.id, type: 'QUIZ', isCompleted: true },
+      });
+      const unitTestDone = await SATProgress.count({
+        where: { userId, unitId: unit.id, type: 'UNIT_TEST', isCompleted: true },
+      });
 
       return {
         ...unit.toJSON(),
         lessonsTotal,
-        lessonsCompleted: safeLessonsCompleted,
+        lessonsCompleted: Math.min(lessonsCompleted, lessonsTotal),
+        quizCompleted: Math.min(quizCompleted, lessonsTotal),
+        unitTestDone: Math.min(unitTestDone, 1),
       };
     }));
 
-    return res.json({ units: unitsWithProgress });
+    return res.status(200).json({ units: unitsWithProgress });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
@@ -252,7 +251,10 @@ const submitUnitTest = async (req, res) => {
 
     const lessons = await SATLesson.findAll({ where: { unitId: id, isActive: true } });
     const lessonIds = lessons.map(l => l.id);
-    const questions = await SATLessonQuiz.findAll({ where: { lessonId: lessonIds } });
+
+    const questions = await SATLessonQuiz.findAll({
+      where: { lessonId: lessonIds },
+    });
 
     let correct = 0;
     const corrections = {};
@@ -268,17 +270,32 @@ const submitUnitTest = async (req, res) => {
       };
     });
 
-    const score = Math.round((correct / questions.length) * 100);
+    const score = questions.length > 0 ? Math.round((correct / questions.length) * 100) : 0;
     const scoreSAT = Math.round(400 + (score / 100) * 1200);
+    const isPassed = score >= 60;
 
+    // Sauvegarder le résultat du SAT Blanc
     await SATProgress.upsert({
-      userId, unitId: id,
-      type: 'UNIT_TEST', isCompleted: score >= 60, score, scoreSAT,
+      userId,
+      unitId: id,
+      lessonId: null,
+      type: 'UNIT_TEST',
+      isCompleted: isPassed,
+      score,
+      scoreSAT,
     });
 
-    await attribuerPoints(userId, score >= 60 ? 100 : 30);
+    // Attribuer des points
+    await attribuerPoints(userId, isPassed ? 100 : 30);
 
-    return res.json({ score, scoreSAT, correct, total: questions.length, isPassed: score >= 60, corrections });
+    return res.status(200).json({
+      score,
+      scoreSAT,
+      correct,
+      total: questions.length,
+      isPassed,
+      corrections,
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
