@@ -191,9 +191,21 @@ const confirmConsultationPayment = async (req, res) => {
       return res.status(404).json({ message: 'Consultation non trouvée' });
     }
 
-    await consultation.update({ isPaid: true, statut: 'CONFIRMED' });
+    // Générer un lien Google Meet unique
+    const meetId = `bsts-${consultation.id.substring(0, 8)}`;
+    const meetLink = `https://meet.google.com/${meetId}`;
 
-    return res.status(200).json({ message: 'Paiement confirmé !', consultation });
+    await consultation.update({ 
+      isPaid: true, 
+      statut: 'CONFIRMED',
+      meetLink,
+    });
+
+    return res.status(200).json({ 
+      message: 'Paiement confirmé !', 
+      consultation,
+      meetLink,
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }

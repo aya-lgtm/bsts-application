@@ -16,9 +16,6 @@ const {
 const { getMyReviews, createReview } = require('../controllers/review.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
-// GET tous les étudiants universitaires (tous les rôles)
-router.get('/', authenticate, getAllCollegeStudents);
-
 // GET/PUT mon profil (COLLEGE_STUDENT)
 router.get('/me', authenticate, authorize('COLLEGE_STUDENT'), getMyProfile);
 router.put('/me', authenticate, authorize('COLLEGE_STUDENT'), updateMyProfile);
@@ -38,19 +35,22 @@ router.post('/consultations/book', authenticate, bookConsultation);
 // PUT confirmer paiement
 router.put('/consultations/:consultationId/confirm-payment', authenticate, confirmConsultationPayment);
 
+// GET tous les étudiants universitaires
+router.get('/', authenticate, getAllCollegeStudents);
+
+// POST créer un étudiant universitaire (ADMIN/SUPER_ADMIN)
+router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), createCollegeStudent);
+
 // GET un étudiant universitaire par ID
 router.get('/:id', authenticate, getCollegeStudentById);
 
 // POST laisser un avis
 router.post('/:id/reviews', authenticate, createReview);
 
-// POST créer un étudiant universitaire (ADMIN)
-router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), createCollegeStudent);
-
-// PUT modifier un étudiant universitaire (ADMIN)
+// PUT modifier un étudiant universitaire (ADMIN/SUPER_ADMIN)
 router.put('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), updateCollegeStudent);
 
-// DELETE désactiver un étudiant universitaire (ADMIN)
+// DELETE désactiver un étudiant universitaire (ADMIN/SUPER_ADMIN)
 router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), deleteCollegeStudent);
 
 module.exports = router;
