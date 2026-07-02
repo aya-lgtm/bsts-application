@@ -34,6 +34,7 @@ const SubjectExam = require('./SubjectExam');
 const SubjectExamQuestion = require('./SubjectExamQuestion');
 const SubjectExamResult = require('./SubjectExamResult');
 const Report = require('./Report');
+const Review = require('./Review');
 const syncDatabase = async () => {
   try {
     await sequelize.sync({ alter: true });
@@ -53,7 +54,7 @@ module.exports = {
   Gamification,
   Conversation, Message, ConversationMember,
   Payment, PromoCode, Notification, LinkRequest,
-  CollegeStudent, Consultation,
+  CollegeStudent, Consultation, Review,
   ChapterQuiz, ChapterQuizQuestion, ChapterQuizResult,
   SubjectExam, SubjectExamQuestion, SubjectExamResult,
   Report,

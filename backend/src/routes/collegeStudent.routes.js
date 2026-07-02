@@ -13,6 +13,7 @@ const {
   getMyProfile,
   updateMyProfile,
 } = require('../controllers/collegeStudent.controller');
+const { getMyReviews, createReview } = require('../controllers/review.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
 // GET tous les étudiants universitaires (tous les rôles)
@@ -21,6 +22,9 @@ router.get('/', authenticate, getAllCollegeStudents);
 // GET/PUT mon profil (COLLEGE_STUDENT)
 router.get('/me', authenticate, authorize('COLLEGE_STUDENT'), getMyProfile);
 router.put('/me', authenticate, authorize('COLLEGE_STUDENT'), updateMyProfile);
+
+// GET mes avis (COLLEGE_STUDENT)
+router.get('/me/reviews', authenticate, authorize('COLLEGE_STUDENT'), getMyReviews);
 
 // GET mes consultations
 router.get('/consultations/my', authenticate, getMyConsultations);
@@ -36,6 +40,9 @@ router.put('/consultations/:consultationId/confirm-payment', authenticate, confi
 
 // GET un étudiant universitaire par ID
 router.get('/:id', authenticate, getCollegeStudentById);
+
+// POST laisser un avis
+router.post('/:id/reviews', authenticate, createReview);
 
 // POST créer un étudiant universitaire (ADMIN)
 router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), createCollegeStudent);
