@@ -178,7 +178,6 @@ const getParentConsultations = async (req, res) => {
   }
 };
 
-// PUT confirmer le paiement d'une consultation
 const confirmConsultationPayment = async (req, res) => {
   try {
     const { consultationId } = req.params;
@@ -191,18 +190,31 @@ const confirmConsultationPayment = async (req, res) => {
       return res.status(404).json({ message: 'Consultation non trouvée' });
     }
 
-    // Générer un lien Google Meet unique
-    const meetId = `bsts-${consultation.id.substring(0, 8)}`;
-    const meetLink = `https://meet.google.com/${meetId}`;
-
-    await consultation.update({ 
-      isPaid: true, 
-      statut: 'CONFIRMED',
-      meetLink,
+    // Générer un lien Daily.co automatiquement
+    const roomName = `bsts-consultation-${consultationId}`;
+    const dailyResponse = await fetch('https://api.daily.co/v1/rooms', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.DAILY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        name: roomName,
+        properties: {
+          enable_chat: true,
+          enable_screenshare: false,
+          exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // Expire dans 24h
+        },
+      }),
     });
 
-    return res.status(200).json({ 
-      message: 'Paiement confirmé !', 
+    const roomData = await dailyResponse.json();
+    const meetLink = roomData.url || `https://${process.env.DAILY_DOMAIN}.daily.co/${roomName}`;
+
+    await consultation.update({ isPaid: true, statut: 'CONFIRMED', meetLink });
+
+    return res.status(200).json({
+      message: 'Paiement confirmé !',
       consultation,
       meetLink,
     });
