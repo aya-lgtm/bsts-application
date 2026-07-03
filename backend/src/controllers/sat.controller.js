@@ -448,11 +448,159 @@ const getUserLevel = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET /sat/revision/stats
+const getRevisionStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
 
+    // 1. Questions à revoir (ratées au moins une fois)
+    const history = await SATQuestionHistory.findAll({
+      where: { studentId: userId, timesWrong: { [Op.gt]: 0 } },
+    });
+    const totalARevoir = history.length;
+
+    // 2. Taux de maîtrise global
+    const allHistory = await SATQuestionHistory.findAll({
+      where: { studentId: userId },
+    });
+    const totalCorrectes = allHistory.reduce((s, h) => s + (h.timesCorrect || 0), 0);
+    const totalTentatives = allHistory.reduce((s, h) => s + (h.timesCorrect || 0) + (h.timesWrong || 0), 0);
+    const maitrise = totalTentatives > 0 ? Math.round((totalCorrectes / totalTentatives) * 100) : 0;
+
+    // 3. Série de jours consécutifs
+    const sessions = await SATSession.findAll({
+      where: { userId, isCompleted: true },
+      order: [['createdAt', 'DESC']],
+      limit: 30,
+    });
+    let serie = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 30; i++) {
+      const day = new Date(today);
+      day.setDate(day.getDate() - i);
+      const hasSession = sessions.some(s => {
+        const d = new Date(s.createdAt);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === day.getTime();
+      });
+      if (hasSession) serie++;
+      else break;
+    }
+
+    // 4. Questions révisées aujourd'hui
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todaySessions = sessions.filter(s => new Date(s.createdAt) >= startOfDay);
+    const questionsDuJour = Math.min(
+      todaySessions.reduce((s, sess) => s + (sess.bonnesReponses || 0), 0),
+      10
+    );
+
+    // 5. Erreurs par domaine
+    const historyWithQuestions = await SATQuestionHistory.findAll({
+      where: { studentId: userId, timesWrong: { [Op.gt]: 0 } },
+      include: [{ model: SATQuestion, as: 'question', attributes: ['domaine'] }],
+    });
+
+    const erreursMath = historyWithQuestions.filter(h => h.question?.domaine === 'MATH').length;
+    const erreursReading = historyWithQuestions.filter(h => h.question?.domaine === 'READING').length;
+    const erreursWriting = historyWithQuestions.filter(h => h.question?.domaine === 'WRITING').length;
+
+    return res.status(200).json({
+      totalARevoir,
+      maitrise,
+      serie,
+      objectifJour: 10,
+      questionsDuJour,
+      parDomaine: {
+        MATH: { erreurs: erreursMath, maitrise },
+        READING: { erreurs: erreursReading, maitrise },
+        WRITING: { erreurs: erreursWriting, maitrise },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+// GET /sat/revision/stats
+const getRevisionStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Questions à revoir (ratées au moins une fois)
+    const history = await SATQuestionHistory.findAll({
+      where: { studentId: userId, timesWrong: { [Op.gt]: 0 } },
+    });
+    const totalARevoir = history.length;
+
+    // 2. Taux de maîtrise global
+    const allHistory = await SATQuestionHistory.findAll({
+      where: { studentId: userId },
+    });
+    const totalCorrectes = allHistory.reduce((s, h) => s + (h.timesCorrect || 0), 0);
+    const totalTentatives = allHistory.reduce((s, h) => s + (h.timesCorrect || 0) + (h.timesWrong || 0), 0);
+    const maitrise = totalTentatives > 0 ? Math.round((totalCorrectes / totalTentatives) * 100) : 0;
+
+    // 3. Série de jours consécutifs
+    const sessions = await SATSession.findAll({
+      where: { userId, isCompleted: true },
+      order: [['createdAt', 'DESC']],
+      limit: 30,
+    });
+
+    let serie = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 30; i++) {
+      const day = new Date(today);
+      day.setDate(day.getDate() - i);
+      const hasSession = sessions.some(s => {
+        const d = new Date(s.createdAt);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === day.getTime();
+      });
+      if (hasSession) serie++;
+      else break;
+    }
+
+    // 4. Questions révisées aujourd'hui
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todaySessions = sessions.filter(s => new Date(s.createdAt) >= startOfDay);
+    const questionsDuJour = todaySessions.reduce((s, sess) => s + (sess.bonnesReponses || 0), 0);
+
+    // 5. Erreurs par domaine
+    const historyWithQuestions = await SATQuestionHistory.findAll({
+      where: { studentId: userId, timesWrong: { [Op.gt]: 0 } },
+      include: [{ model: SATQuestion, as: 'question', attributes: ['domaine'] }],
+    });
+
+    const erreursMath = historyWithQuestions.filter(h => h.question?.domaine === 'MATH').length;
+    const erreursReading = historyWithQuestions.filter(h => h.question?.domaine === 'READING').length;
+    const erreursWriting = historyWithQuestions.filter(h => h.question?.domaine === 'WRITING').length;
+
+    return res.status(200).json({
+      totalARevoir,
+      maitrise,
+      serie,
+      objectifJour: 10,
+      questionsDuJour: Math.min(questionsDuJour, 10),
+      parDomaine: {
+        MATH:    { erreurs: erreursMath,    maitrise },
+        READING: { erreurs: erreursReading, maitrise },
+        WRITING: { erreurs: erreursWriting, maitrise },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   getQuestions, startSession, submitSession,
   getStats, addSATQuestion, attribuerPoints,
   getSATProgress, getSATSections,
   getParentSATProgress, getMistakes,
   startLevelTest, submitLevelTest, getUserLevel,
+  getRevisionStats,
 };

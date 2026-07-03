@@ -10,6 +10,7 @@ const {
   getSATSections,
   getParentSATProgress,
   getMistakes,
+  getRevisionStats,
   startLevelTest,
   submitLevelTest,
   getUserLevel,
@@ -34,6 +35,7 @@ router.get('/questions', authenticate, getQuestions);
 
 // GET questions ratées (mode erreurs)
 router.get('/mistakes', authenticate, getMistakes);
+router.get('/revision/stats', authenticate, getRevisionStats);
 
 // GET niveau actuel
 router.get('/level', authenticate, getUserLevel);
