@@ -200,6 +200,7 @@ const confirmConsultationPayment = async (req, res) => {
       },
       body: JSON.stringify({
         name: roomName,
+        privacy: 'public',
         properties: {
           enable_chat: true,
           enable_screenshare: false,
@@ -260,6 +261,80 @@ const updateMyProfile = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// POST webhook Daily.co
+const handleDailyWebhook = async (req, res) => {
+  // Répondre 200 immédiatement
+  res.status(200).json({ received: true });
+
+  try {
+    const { event_type, payload } = req.body;
+    if (!event_type || !payload) return;
+
+    const roomName = payload.room || payload.room_name || '';
+    const consultationId = roomName.replace('bsts-consultation-', '');
+    if (!consultationId || consultationId === roomName) return;
+
+    const consultation = await Consultation.findByPk(consultationId);
+    if (!consultation) return;
+
+    const now = new Date();
+
+    if (event_type === 'meeting-started') {
+      await consultation.update({
+        meetingStatus: 'IN_PROGRESS',
+        firstJoinedAt: consultation.firstJoinedAt || now,
+      });
+    }
+
+    if (event_type === 'meeting-joined') {
+      const sessions = [...(consultation.sessions || [])];
+      sessions.push({ joinedAt: now.toISOString(), leftAt: null, durationSeconds: 0 });
+      const update = { sessions };
+      if (!consultation.firstJoinedAt) {
+        update.firstJoinedAt = now;
+        update.meetingStatus = 'IN_PROGRESS';
+      }
+      await consultation.update(update);
+    }
+
+    if (event_type === 'meeting-left') {
+      const sessions = [...(consultation.sessions || [])];
+      const openIdx = sessions.map(s => s.leftAt).lastIndexOf(null);
+      if (openIdx !== -1) {
+        const durationSeconds = Math.round(
+          (now - new Date(sessions[openIdx].joinedAt)) / 1000
+        );
+        sessions[openIdx] = { ...sessions[openIdx], leftAt: now.toISOString(), durationSeconds };
+        await consultation.update({
+          sessions,
+          totalDurationSeconds: (consultation.totalDurationSeconds || 0) + durationSeconds,
+          lastLeftAt: now,
+        });
+      }
+    }
+
+    if (event_type === 'meeting-ended') {
+      const sessions = [...(consultation.sessions || [])];
+      let totalAdd = 0;
+      sessions.forEach((s, i) => {
+        if (!s.leftAt) {
+          const durationSeconds = Math.round((now - new Date(s.joinedAt)) / 1000);
+          sessions[i] = { ...s, leftAt: now.toISOString(), durationSeconds };
+          totalAdd += durationSeconds;
+        }
+      });
+      await consultation.update({
+        meetingStatus: 'COMPLETED',
+        statut: 'COMPLETED',
+        lastLeftAt: now,
+        sessions,
+        totalDurationSeconds: (consultation.totalDurationSeconds || 0) + totalAdd,
+      });
+    }
+  } catch (err) {
+    console.error('[Daily Webhook] Erreur :', err.message);
+  }
+};
 
 module.exports = {
   getAllCollegeStudents,
@@ -272,5 +347,6 @@ module.exports = {
   getParentConsultations,
   confirmConsultationPayment,
   getMyProfile,
+  handleDailyWebhook,
   updateMyProfile,
 };

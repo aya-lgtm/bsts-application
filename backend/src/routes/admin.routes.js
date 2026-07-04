@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getDashboard, getStats, broadcastNotification, getAllMeetings } = require('../controllers/admin.controller');
+const { getDashboard, getStats, broadcastNotification, getAllMeetings, getAdminPayments } = require('../controllers/admin.controller');
 const { createReport, getReports, resolveReport } = require('../controllers/report.controller');
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
@@ -20,5 +20,6 @@ router.get('/meetings', authenticate, isAdmin, getAllMeetings);
 router.post('/reports', authenticate, createReport);
 router.get('/reports', authenticate, isAdmin, getReports);
 router.put('/reports/:id/resolve', authenticate, isAdmin, resolveReport);
-
+// Payments
+router.get('/payments', authenticate, isAdmin, getAdminPayments);
 module.exports = router;

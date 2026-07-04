@@ -54,6 +54,27 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  meetingStatus: {
+  type: DataTypes.ENUM('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'),
+  defaultValue: 'NOT_STARTED',
+},
+firstJoinedAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
+lastLeftAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
+totalDurationSeconds: {
+  type: DataTypes.INTEGER,
+  defaultValue: 0,
+},
+sessions: {
+  type: DataTypes.JSONB,
+  allowNull: false,
+  defaultValue: [],
+},
 }, {
   tableName: 'consultations',
   timestamps: true,

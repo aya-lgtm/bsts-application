@@ -181,5 +181,42 @@ const getAllMeetings = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+// GET /admin/payments
+const getAdminPayments = async (req, res) => {
+  try {
+    const payments = await Payment.findAll({
+      include: [{ model: User, attributes: ['id', 'nom', 'prenom'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 50,
+    });
 
-module.exports = { getDashboard, getStats, broadcastNotification, getAllMeetings };
+    const montantAbonnements = payments
+      .filter(p => p.statut === 'COMPLETED')
+      .reduce((sum, p) => sum + parseFloat(p.montant), 0);
+
+    // Revenus des meetings (stockés sur Consultation, pas Payment)
+    const consultationsPayees = await Consultation.findAll({
+      where: { isPaid: true },
+      attributes: ['prix'],
+    });
+    const montantMeetings = consultationsPayees.reduce(
+      (sum, c) => sum + parseFloat(c.prix || 0), 0
+    );
+
+    const revenusTotaux = montantAbonnements + montantMeetings;
+
+    return res.status(200).json({
+      revenusTotaux: Math.round(revenusTotaux),
+      deltaPourcent: 0,
+      repartition: [
+        { label: 'Abonnements étudiants', montant: Math.round(montantAbonnements) },
+        { label: 'Meetings', montant: Math.round(montantMeetings) },
+      ],
+      transactions: payments,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+module.exports = { getDashboard, getStats, broadcastNotification, getAllMeetings, getAdminPayments };

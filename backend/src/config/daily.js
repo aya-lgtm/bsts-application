@@ -8,8 +8,8 @@ const createMeetingRoom = async (consultationId, expiresAt) => {
     const response = await axios.post(
       `${DAILY_BASE_URL}/rooms`,
       {
-        name: `bsts-${consultationId.substring(0, 8)}`,
-        privacy: 'private',
+        name: `bsts-consultation-${consultationId}`,
+        privacy: 'public',
         properties: {
           exp: Math.floor(new Date(expiresAt).getTime() / 1000),
           max_participants: 2,

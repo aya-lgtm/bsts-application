@@ -12,8 +12,10 @@ const {
   confirmConsultationPayment,
   getMyProfile,
   updateMyProfile,
+  handleDailyWebhook
 } = require('../controllers/collegeStudent.controller');
 const { getMyReviews, createReview } = require('../controllers/review.controller');
+router.post('/webhook/daily', handleDailyWebhook);
 const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
 // GET/PUT mon profil (COLLEGE_STUDENT)
