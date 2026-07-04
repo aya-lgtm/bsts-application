@@ -9,10 +9,11 @@ const {
   bookConsultation,
   getMyConsultations,
   getParentConsultations,
+  getMentorConsultations,
   confirmConsultationPayment,
   getMyProfile,
   updateMyProfile,
-  handleDailyWebhook
+  handleDailyWebhook,
 } = require('../controllers/collegeStudent.controller');
 const { getMyReviews, createReview } = require('../controllers/review.controller');
 router.post('/webhook/daily', handleDailyWebhook);
@@ -30,7 +31,7 @@ router.get('/consultations/my', authenticate, getMyConsultations);
 
 // GET consultations de mes enfants (PARENT)
 router.get('/consultations/parent', authenticate, authorize('PARENT'), getParentConsultations);
-
+router.get('/mentor/consultations', authenticate, authorize('COLLEGE_STUDENT'), getMentorConsultations);
 // POST réserver une consultation
 router.post('/consultations/book', authenticate, bookConsultation);
 

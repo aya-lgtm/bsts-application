@@ -335,7 +335,26 @@ const handleDailyWebhook = async (req, res) => {
     console.error('[Daily Webhook] Erreur :', err.message);
   }
 };
+// GET mes consultations en tant que mentor (COLLEGE_STUDENT connecté)
+const getMentorConsultations = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, { attributes: ['email'] });
+    if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
+    const student = await CollegeStudent.findOne({ where: { email: user.email } });
+    if (!student) return res.status(404).json({ message: 'Profil mentor non trouvé' });
+
+    const consultations = await Consultation.findAll({
+      where: { collegeStudentId: student.id },
+      include: [{ model: User, attributes: ['id', 'nom', 'prenom', 'email'] }],
+      order: [['date', 'DESC']],
+    });
+
+    return res.status(200).json({ consultations });
+  } catch (error) {
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
 module.exports = {
   getAllCollegeStudents,
   getCollegeStudentById,
@@ -349,4 +368,5 @@ module.exports = {
   getMyProfile,
   handleDailyWebhook,
   updateMyProfile,
+  getMentorConsultations,
 };
