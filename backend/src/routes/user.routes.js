@@ -40,9 +40,9 @@ router.put('/link-requests/:requestId/respond', authenticate, authorize('STUDENT
 router.get('/:parentId/children', authenticate, getParentChildrenStats);
 router.get('/:parentId/activity', authenticate, getParentChildrenActivity);
 router.post('/:parentId/link-request', authenticate, authorize('PARENT'), sendLinkRequest);
-router.get('/', authenticate, authorize('ADMIN'), getAllUsers);
-router.get('/role/:role', authenticate, authorize('ADMIN'), getUsersByRole);
-router.delete('/:id', authenticate, authorize('ADMIN'), deleteUser);
-router.post('/create-user', authenticate, authorize('ADMIN'), createUserByAdmin);
+router.get('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), getAllUsers);
+router.get('/role/:role', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), getUsersByRole);
+router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), deleteUser);
+router.post('/create-user', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), createUserByAdmin);
 
 module.exports = router;
