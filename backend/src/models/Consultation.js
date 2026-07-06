@@ -81,7 +81,7 @@ sessions: {
 });
 
 Consultation.belongsTo(User, { foreignKey: 'userId' });
-Consultation.belongsTo(CollegeStudent, { foreignKey: 'collegeStudentId' });
+Consultation.belongsTo(User, { foreignKey: 'userId', constraints: false });
 User.hasMany(Consultation, { foreignKey: 'userId' });
 CollegeStudent.hasMany(Consultation, { foreignKey: 'collegeStudentId' });
 

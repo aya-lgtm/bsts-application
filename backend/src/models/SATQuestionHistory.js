@@ -36,9 +36,9 @@ const SATQuestionHistory = sequelize.define('SATQuestionHistory', {
     { unique: true, fields: ['studentId', 'questionId'] }
   ],
 });
+SATQuestionHistory.belongsTo(User, { foreignKey: 'studentId', constraints: false });
+User.hasMany(SATQuestionHistory, { foreignKey: 'studentId', constraints: false });
+SATQuestionHistory.belongsTo(SATQuestion, { foreignKey: 'questionId', constraints: false });
 
-SATQuestionHistory.belongsTo(User, { foreignKey: 'studentId' });
-SATQuestionHistory.belongsTo(SATQuestion, { foreignKey: 'questionId' });
-User.hasMany(SATQuestionHistory, { foreignKey: 'studentId' });
 
 module.exports = SATQuestionHistory;

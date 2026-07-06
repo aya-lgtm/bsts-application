@@ -14,7 +14,7 @@ const SubjectExamResult = sequelize.define('SubjectExamResult', {
   completedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, { tableName: 'subject_exam_results', timestamps: true });
 
-SubjectExamResult.belongsTo(User, { foreignKey: 'userId' });
+SubjectExamResult.belongsTo(User, { foreignKey: 'userId', constraints: false });
 SubjectExamResult.belongsTo(SubjectExam, { foreignKey: 'subjectExamId' });
 User.hasMany(SubjectExamResult, { foreignKey: 'userId' });
 SubjectExam.hasMany(SubjectExamResult, { foreignKey: 'subjectExamId' });

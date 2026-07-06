@@ -1,5 +1,8 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
+const SchoolSystem = require('./SchoolSystem');
+const SchoolLevel = require('./SchoolLevel');
+const SchoolFiliere = require('./SchoolFiliere');
 
 const User = sequelize.define('User', {
   id: {
@@ -97,6 +100,23 @@ role: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  isReported: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  schoolSystemId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  schoolLevelId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  schoolFiliereId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+}, {
 }, {
   tableName: 'users',
   timestamps: true,
@@ -104,6 +124,11 @@ role: {
 
 // Auto-relation parent-enfant
 User.hasMany(User, { foreignKey: 'parentId', as: 'children' });
-User.belongsTo(User, { foreignKey: 'parentId', as: 'parent' });
+User.belongsTo(User, { foreignKey: 'parentId', as: 'parent', constraints: false });
+
+// Profil scolaire
+User.belongsTo(SchoolSystem, { foreignKey: 'schoolSystemId' });
+User.belongsTo(SchoolLevel, { foreignKey: 'schoolLevelId' });
+User.belongsTo(SchoolFiliere, { foreignKey: 'schoolFiliereId' });
 
 module.exports = User;

@@ -14,7 +14,7 @@ const ChapterQuizResult = sequelize.define('ChapterQuizResult', {
   completedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, { tableName: 'chapter_quiz_results', timestamps: true });
 
-ChapterQuizResult.belongsTo(User, { foreignKey: 'userId' });
+ChapterQuizResult.belongsTo(User, { foreignKey: 'userId', constraints: false });
 ChapterQuizResult.belongsTo(ChapterQuiz, { foreignKey: 'chapterQuizId' });
 User.hasMany(ChapterQuizResult, { foreignKey: 'userId' });
 ChapterQuiz.hasMany(ChapterQuizResult, { foreignKey: 'chapterQuizId' });

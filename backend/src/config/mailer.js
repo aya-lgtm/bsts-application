@@ -3,14 +3,14 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'project.bsts@gmail.com',
-    pass: 'lkdd cvna dkvb xhrf',
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
 const sendResetPasswordEmail = async (email, resetUrl) => {
   const mailOptions = {
-    from: '"BSTS App" <project.bsts@gmail.com>',
+  from: `"BSTS App" <${process.env.GMAIL_USER}>`,
     to: email,
     subject: 'Réinitialisation de votre mot de passe BSTS',
     html: `
@@ -36,7 +36,7 @@ const sendResetPasswordEmail = async (email, resetUrl) => {
 
 const sendOTPEmail = async (email, otpCode) => {
   const mailOptions = {
-    from: '"BSTS App" <project.bsts@gmail.com>',
+    from: `"BSTS App" <${process.env.GMAIL_USER}>`,
     to: email,
     subject: 'Code de vérification BSTS',
     html: `

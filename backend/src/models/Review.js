@@ -12,7 +12,7 @@ const Review = sequelize.define('Review', {
   badges: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [] },
 }, { tableName: 'reviews', timestamps: true });
 
-Review.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Review.belongsTo(User, { foreignKey: 'userId', as: 'user', constraints: false });
 Review.belongsTo(CollegeStudent, { foreignKey: 'collegeStudentId' });
 CollegeStudent.hasMany(Review, { foreignKey: 'collegeStudentId' });
 

@@ -6,8 +6,8 @@ let token = '';
 
 const login = async () => {
   const res = await axios.post(`${BASE_URL}/auth/login`, {
-    email: 'admin@bsts.ma',
-    password: 'Admin1234!',
+    email: 'admin@example.com',
+password: 'ChangeMe1234!',
   });
   token = res.data.accessToken;
   console.log('✅ Connecté en tant qu\'ADMIN');

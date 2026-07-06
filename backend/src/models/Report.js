@@ -18,6 +18,6 @@ const Report = sequelize.define('Report', {
   },
 }, { tableName: 'reports', timestamps: true });
 
-Report.belongsTo(User, { foreignKey: 'reporterId', as: 'reporter' });
+Report.belongsTo(User, { foreignKey: 'reporterId', as: 'reporter', constraints: false });
 
 module.exports = Report;

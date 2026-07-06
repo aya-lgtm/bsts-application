@@ -42,7 +42,7 @@ fileDuration: {
   timestamps: true,
 });
 
-Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+Message.belongsTo(User, { foreignKey: 'senderId', as: 'sender', constraints: false });
 Message.belongsTo(Conversation, { foreignKey: 'conversationId' });
 Conversation.hasMany(Message, { foreignKey: 'conversationId' });
 

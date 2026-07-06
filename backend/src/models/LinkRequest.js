@@ -25,7 +25,7 @@ const LinkRequest = sequelize.define('LinkRequest', {
   timestamps: true,
 });
 
-LinkRequest.belongsTo(User, { foreignKey: 'parentId', as: 'parent' });
-LinkRequest.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
+LinkRequest.belongsTo(User, { foreignKey: 'parentId', as: 'parent', constraints: false });
+LinkRequest.belongsTo(User, { foreignKey: 'studentId', as: 'student', constraints: false });
 
 module.exports = LinkRequest;

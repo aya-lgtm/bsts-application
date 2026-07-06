@@ -22,7 +22,7 @@ const ConversationMember = sequelize.define('ConversationMember', {
   timestamps: true,
 });
 
-ConversationMember.belongsTo(User, { foreignKey: 'userId' });
+ConversationMember.belongsTo(User, { foreignKey: 'userId', constraints: false });
 ConversationMember.belongsTo(Conversation, { foreignKey: 'conversationId' });
 Conversation.hasMany(ConversationMember, { foreignKey: 'conversationId' });
 User.hasMany(ConversationMember, { foreignKey: 'userId' });

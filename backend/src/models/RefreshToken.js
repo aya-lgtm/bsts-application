@@ -8,6 +8,16 @@ const RefreshToken = sequelize.define('RefreshToken', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id',
+    },
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  },
   token: {
     type: DataTypes.TEXT,
     allowNull: false,

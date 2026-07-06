@@ -14,6 +14,7 @@ const SATProgress = sequelize.define('SATProgress', {
   quizPassed: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, { tableName: 'sat_progress', timestamps: true });
 
-SATProgress.belongsTo(User, { foreignKey: 'userId' });
+SATProgress.belongsTo(User, { foreignKey: 'userId', constraints: false });
+User.hasMany(SATProgress, { foreignKey: 'userId', constraints: false });
 
 module.exports = SATProgress;

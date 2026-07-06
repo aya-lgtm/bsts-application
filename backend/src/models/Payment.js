@@ -44,8 +44,7 @@ const Payment = sequelize.define('Payment', {
   tableName: 'payments',
   timestamps: true,
 });
-
-Payment.belongsTo(User, { foreignKey: 'userId' });
+Payment.belongsTo(User, { foreignKey: 'userId', constraints: false });
 User.hasMany(Payment, { foreignKey: 'userId' });
 
 module.exports = Payment;

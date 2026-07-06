@@ -49,7 +49,7 @@ const SATSession = sequelize.define('SATSession', {
   timestamps: true,
 });
 
-SATSession.belongsTo(User, { foreignKey: 'userId' });
-User.hasMany(SATSession, { foreignKey: 'userId' });
+SATSession.belongsTo(User, { foreignKey: 'userId', constraints: false });
+User.hasMany(SATSession, { foreignKey: 'userId', constraints: false });
 
 module.exports = SATSession;

@@ -31,9 +31,9 @@ const Progress = sequelize.define('Progress', {
 });
 
 // Associations
-Progress.belongsTo(User, { foreignKey: 'userId' });
+Progress.belongsTo(User, { foreignKey: 'userId', constraints: false });
 Progress.belongsTo(Lesson, { foreignKey: 'lessonId' });
-User.hasMany(Progress, { foreignKey: 'userId' });
+User.hasMany(Progress, { foreignKey: 'userId', constraints: false });
 Lesson.hasMany(Progress, { foreignKey: 'lessonId' });
 
 module.exports = Progress;

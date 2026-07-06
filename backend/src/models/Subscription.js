@@ -35,7 +35,6 @@ const Subscription = sequelize.define('Subscription', {
 });
 
 // Association : un abonnement appartient à un user
-Subscription.belongsTo(User, { foreignKey: 'userId' });
-User.hasOne(Subscription, { foreignKey: 'userId' });
-
+Subscription.belongsTo(User, { foreignKey: 'userId', constraints: false });
+User.hasOne(Subscription, { foreignKey: 'userId', constraints: false });
 module.exports = Subscription;

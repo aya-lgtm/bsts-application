@@ -30,7 +30,7 @@ const QuizResult = sequelize.define('QuizResult', {
   timestamps: true,
 });
 
-QuizResult.belongsTo(User, { foreignKey: 'userId' });
+QuizResult.belongsTo(User, { foreignKey: 'userId', constraints: false });
 QuizResult.belongsTo(Quiz, { foreignKey: 'quizId' });
 User.hasMany(QuizResult, { foreignKey: 'userId' });
 Quiz.hasMany(QuizResult, { foreignKey: 'quizId' });
