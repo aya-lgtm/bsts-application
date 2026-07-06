@@ -10,56 +10,54 @@ const api = axios.create({
   timeout: 10000,
 })
 
-// Après la création de `api`, ajoute :
+// Intercepteur réponse — refresh token automatique
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+      originalRequest._retry = true
 
-      const refreshToken = await SecureStore.getItemAsync('refreshToken');
-      if (!refreshToken) throw error;
+      const refreshToken = await SecureStore.getItemAsync('refreshToken')
+      if (!refreshToken) throw error
 
       try {
-        const res = await api.post('/auth/refresh-token', { refreshToken });
-        const newAccessToken = res.data.accessToken;
+        const res = await api.post('/auth/refresh-token', { refreshToken })
+        const newAccessToken = res.data.accessToken
 
-        await SecureStore.setItemAsync('accessToken', newAccessToken);
-        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
+        await SecureStore.setItemAsync('accessToken', newAccessToken)
+        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`
 
-        return api(originalRequest); // Relance la requête originale
+        return api(originalRequest)
       } catch {
-        // Refresh token expiré → déconnecter
-        await SecureStore.deleteItemAsync('accessToken');
-        await SecureStore.deleteItemAsync('refreshToken');
-        await SecureStore.deleteItemAsync('user');
-        throw error;
+        await SecureStore.deleteItemAsync('accessToken')
+        await SecureStore.deleteItemAsync('refreshToken')
+        await SecureStore.deleteItemAsync('user')
+        throw error
       }
     }
-    throw error;
+    throw error
   }
-);
+)
 
-// Intercepteur pour injecter le token automatiquement
+// Intercepteur requête — injection du token
 api.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync('accessToken');
+  const token = await SecureStore.getItemAsync('accessToken')
   if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`;
+    config.headers['Authorization'] = `Bearer ${token}`
   }
-  return config;
-});
+  return config
+})
+
+// ─── AUTH ──────────────────────────────────────────────────────────────────────
 
 export const loginUser = async (email: string, password: string) => {
   const response = await api.post('/auth/login', { email, password })
   const { accessToken, refreshToken, user } = response.data
-
-  // Sauvegarder les tokens en sécurisé
   await SecureStore.setItemAsync('accessToken', accessToken)
   await SecureStore.setItemAsync('refreshToken', refreshToken)
   await SecureStore.setItemAsync('user', JSON.stringify(user))
-
   return { accessToken, refreshToken, user }
 }
 
@@ -80,7 +78,7 @@ export const getStoredUser = async () => {
 
 export const forgotPasswordAPI = async (emailOrUsername: string) => {
   const response = await api.post('/auth/forgot-password', { emailOrUsername })
-  return response.data // retourne { userId, message }
+  return response.data
 }
 
 export const verifyOTPAPI = async (userId: string, otpCode: string) => {
@@ -103,7 +101,6 @@ export const verifyResetOTPAPI = async (userId: string, otpCode: string) => {
   return response.data
 }
 
-
 export const registerUser = async (data: {
   nom: string
   prenom: string
@@ -113,7 +110,7 @@ export const registerUser = async (data: {
   phone?: string
 }) => {
   const response = await api.post('/auth/register', data)
-  return response.data // retourne { userId, email, message }
+  return response.data
 }
 
 export const changePasswordAPI = async (currentPassword: string, newPassword: string) => {
@@ -121,4 +118,92 @@ export const changePasswordAPI = async (currentPassword: string, newPassword: st
   return response.data
 }
 
-export default api 
+// ─── SUPER ADMIN ───────────────────────────────────────────────────────────────
+
+// GET /api/v1/admin/dashboard — KPIs du dashboard
+export const fetchAdminDashboard = async () => {
+  const response = await api.get('/admin/dashboard')
+  return response.data
+}
+
+// GET /api/v1/admin/stats?period=week|month — statistiques d'utilisation
+export const fetchAdminStats = async (period: 'week' | 'month' = 'week') => {
+  const response = await api.get(`/admin/stats?period=${period}`)
+  return response.data
+}
+
+// GET /api/v1/admin/meetings — liste globale de tous les meetings
+export const fetchAdminMeetings = async (statut?: string) => {
+  const url = statut ? `/admin/meetings?statut=${statut}` : '/admin/meetings'
+  const response = await api.get(url)
+  return response.data
+}
+
+// POST /api/v1/admin/notifications/broadcast — envoi de notif en masse
+export const broadcastNotification = async (data: {
+  target: 'ALL' | 'STUDENT' | 'PROFESSOR' | 'COLLEGE_STUDENT' | 'ADMIN'
+  title: string
+  message: string
+  channel: 'PUSH' | 'EMAIL' | 'SMS'
+  scheduledAt?: string
+}) => {
+  const response = await api.post('/admin/notifications/broadcast', data)
+  return response.data
+}
+
+// GET /api/v1/users — tous les utilisateurs (ADMIN/SUPER_ADMIN)
+export const fetchAllUsers = async () => {
+  const response = await api.get('/users')
+  return response.data
+}
+
+// GET /api/v1/users/role/:role — utilisateurs filtrés par rôle
+export const fetchUsersByRole = async (role: string) => {
+  const response = await api.get(`/users/role/${role}`)
+  return response.data
+}
+
+// DELETE /api/v1/users/:id — supprimer un utilisateur
+export const deleteUserById = async (userId: string) => {
+  const response = await api.delete(`/users/${userId}`)
+  return response.data
+}
+
+// POST /api/v1/users/create-user — créer un utilisateur (admin)
+export const createUserByAdmin = async (data: {
+  nom: string
+  prenom: string
+  email: string
+  password: string
+  role: 'STUDENT' | 'PROFESSOR' | 'COLLEGE_STUDENT' | 'ADMIN'
+  telephone?: string
+  sendCredentialsByEmail?: boolean
+}) => {
+  const response = await api.post('/users/create-user', data)
+  return response.data
+}
+
+// ─── SIGNALEMENTS ──────────────────────────────────────────────────────────────
+
+// GET /api/v1/reports — liste des signalements (À CRÉER côté backend)
+export const fetchReports = async (statut?: string) => {
+  const url = statut ? `/reports?statut=${statut}` : '/reports'
+  const response = await api.get(url)
+  return response.data
+}
+
+// PUT /api/v1/reports/:id/resolve — traiter ou rejeter un signalement
+export const resolveReport = async (reportId: string, action: 'TRAITE' | 'REJETE') => {
+  const response = await api.put(`/reports/${reportId}/resolve`, { action })
+  return response.data
+}
+
+// ─── PAIEMENTS ADMIN ───────────────────────────────────────────────────────────
+
+// GET /api/v1/admin/payments — vue globale des paiements (À CRÉER côté backend)
+export const fetchAdminPayments = async () => {
+  const response = await api.get('/admin/payments')
+  return response.data
+}
+
+export default api

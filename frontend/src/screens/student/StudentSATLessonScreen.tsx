@@ -1,18 +1,21 @@
-// StudentLessonScreen.tsx
-// Copie EXACTE de StudentSATLessonScreen — adapté endpoints cours
-// Supporte : vidéo(s) + PDF(s) + texte combinés
+/**
+ * StudentSATLessonScreen.tsx
+ * Une leçon peut contenir : texte + vidéo(s) + PDF(s) — comme Cisco/CVD
+ * Le prof décide ce qu'il met, tout s'affiche dans l'ordre
+ */
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Animated, Linking, Modal,
   Platform, ScrollView, StyleSheet, Text,
-  TouchableOpacity, View, TextInput,
+  TouchableOpacity, View, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import api from '../../services/auth.service';
 
-// ─── Tokens (copie exacte SAT) ────────────────────────────────────────────────
+const { width: SCREEN_W } = Dimensions.get('window');
+
 const PRIMARY       = '#0D6B5E';
 const PRIMARY_LIGHT = '#E6F3F1';
 const BG            = '#F8FAFB';
@@ -22,13 +25,11 @@ const TEXT_MUTED    = '#6B7280';
 const BORDER        = '#E5E7EB';
 const SUCCESS       = '#16A34A';
 const SUCCESS_LIGHT = '#DCFCE7';
-const GOLD          = '#D4A017';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 type LessonDetail = {
   id: string;
   titre: string;
-  // Multi-contenu (copie exacte SAT)
+  // Multi-contenu
   contenu?:   string;
   videoUrl?:  string;
   videoUrl2?: string;
@@ -36,36 +37,29 @@ type LessonDetail = {
   pdfNom?:    string;
   pdfUrl2?:   string;
   pdfNom2?:   string;
-  duree?: number;
-  isFree?: boolean;
-  isCompleted?: boolean;
-  // Champs alternatifs backend
-  type?: string;
-  documents?: { id: string; nom: string; url?: string; taille?: string }[];
+  dureeMinutes?: number;
+  isCompleted?:  boolean;
+  // Ancien champ (rétrocompatibilité)
+  type?: 'VIDEO' | 'PDF' | 'TEXT';
+  pdfUrl_legacy?: string;
+  videoUrl_legacy?: string;
 };
 
-interface ChapterQuiz { id: string; titre: string; nombreQuestions?: number; }
-interface NavigationProp { navigate: (s: string, p?: any) => void; goBack?: () => void; }
-interface Props {
-  navigation: NavigationProp;
-  route?: { params?: { lessonId?: string; lessonTitre?: string; chapterId?: string; subjectName?: string; } };
-}
+type Unit = {
+  id: string; titre: string;
+  domaine: 'MATH' | 'READING' | 'WRITING';
+};
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function extractVideoUrl(raw: any): string | undefined {
-  return raw?.videoUrl ?? raw?.video_url ?? raw?.lienVideo ?? raw?.video ?? raw?.videoLink ?? undefined;
-}
-function extractVideoUrl2(raw: any): string | undefined {
-  return raw?.videoUrl2 ?? raw?.video_url2 ?? raw?.lienVideo2 ?? raw?.videoLink2 ?? undefined;
-}
-function extractPdfUrl(raw: any): string | undefined {
-  return raw?.pdfUrl ?? raw?.pdf_url ?? raw?.lienPdf ?? raw?.pdf ?? raw?.pdfLink ?? undefined;
-}
-function extractPdfUrl2(raw: any): string | undefined {
-  return raw?.pdfUrl2 ?? raw?.pdf_url2 ?? raw?.lienPdf2 ?? raw?.pdfLink2 ?? undefined;
-}
+type Props = {
+  route: { params: { lesson: LessonDetail; unit: Unit } };
+  navigation: { navigate: (s: string, p?: any) => void; goBack: () => void };
+};
 
-// ─── PDF Viewer Modal (copie EXACTE SAT) ─────────────────────────────────────
+const DOMAIN_COLOR: Record<string, string> = {
+  MATH: '#3B82F6', READING: '#7C3AED', WRITING: '#EC4899',
+};
+
+// ─── PDF Viewer Modal ─────────────────────────────────────────────────────────
 function PDFModal({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const viewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`;
@@ -101,13 +95,13 @@ function PDFModal({ url, name, onClose }: { url: string; name: string; onClose: 
 const pv = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1A1A1A', paddingTop: Platform.OS === 'ios' ? 44 : 0 },
   header: { flexDirection: 'row', alignItems: 'center', backgroundColor: PRIMARY, paddingHorizontal: 12, paddingVertical: 12, paddingTop: Platform.OS === 'android' ? 36 : 12, gap: 10 },
-  btn:    { padding: 6 },
-  title:  { flex: 1, color: '#FFF', fontSize: 15, fontWeight: '600' },
+  btn:   { padding: 6 },
+  title: { flex: 1, color: '#FFF', fontSize: 15, fontWeight: '600' },
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: Platform.OS === 'android' ? 84 : 56 },
   loaderText: { color: TEXT_MUTED, fontSize: 14 },
 });
 
-// ─── Video Player Modal (copie EXACTE SAT) ───────────────────────────────────
+// ─── Video Player Modal ───────────────────────────────────────────────────────
 function VideoModal({ url, titre, onClose }: { url: string; titre: string; onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const isYT  = /youtube\.com|youtu\.be/.test(url);
@@ -127,12 +121,7 @@ function VideoModal({ url, titre, onClose }: { url: string; titre: string; onClo
             ? <WebView source={{ uri: ytUrl }} style={vm.webview} allowsFullscreenVideo mediaPlaybackRequiresUserAction={false} onLoadEnd={() => setLoading(false)} />
             : <WebView source={{ html: videoHtml }} style={vm.webview} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} javaScriptEnabled originWhitelist={['*']} onLoadEnd={() => setLoading(false)} />
           }
-          {loading && (
-            <View style={vm.loader}>
-              <ActivityIndicator size="large" color={PRIMARY} />
-              <Text style={vm.loaderText}>Chargement…</Text>
-            </View>
-          )}
+          {loading && <View style={vm.loader}><ActivityIndicator size="large" color={PRIMARY} /><Text style={vm.loaderText}>Chargement…</Text></View>}
         </View>
       </View>
     </Modal>
@@ -149,28 +138,29 @@ const vm = StyleSheet.create({
   loaderText: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
 });
 
-// ─── VideoBlock cliquable (copie EXACTE SAT) ─────────────────────────────────
+// ─── Bloc vidéo cliquable ─────────────────────────────────────────────────────
 function VideoBlock({ url, titre, color, index, onOpen }: {
   url: string; titre: string; color: string; index: number; onOpen: () => void;
 }) {
-  const isYT     = /youtube\.com|youtu\.be/.test(url);
-  const ytId     = isYT ? url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([a-zA-Z0-9_-]{11})/)?.[1] : null;
+  const isYT   = /youtube\.com|youtu\.be/.test(url);
+  const ytId   = isYT ? url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([a-zA-Z0-9_-]{11})/)?.[1] : null;
   const thumbUrl = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : null;
 
   return (
     <TouchableOpacity style={[vb.card, { borderColor: color + '40' }]} onPress={onOpen} activeOpacity={0.85}>
+      {/* Miniature ou fond coloré */}
       <View style={vb.thumb}>
         {thumbUrl
           ? <WebView source={{ uri: thumbUrl }} style={vb.thumbWeb} scrollEnabled={false} pointerEvents="none" />
-          : <View style={[vb.thumbPlaceholder, { backgroundColor: color + '20' }]}>
-              <Ionicons name="videocam" size={36} color={color} />
-            </View>
+          : <View style={[vb.thumbPlaceholder, { backgroundColor: color + '20' }]}><Ionicons name="videocam" size={36} color={color} /></View>
         }
+        {/* Overlay play */}
         <View style={vb.overlay}>
           <View style={vb.playBtn}>
             <Ionicons name="play" size={26} color="#FFF" style={{ marginLeft: 3 }} />
           </View>
         </View>
+        {/* Badges bas */}
         <View style={vb.bottomRow}>
           <View style={[vb.badge, { backgroundColor: color }]}>
             <Ionicons name="play-circle" size={12} color="#FFF" />
@@ -188,20 +178,20 @@ function VideoBlock({ url, titre, color, index, onOpen }: {
   );
 }
 const vb = StyleSheet.create({
-  card:             { borderRadius: 18, overflow: 'hidden', marginBottom: 16, borderWidth: 1.5 },
-  thumb:            { height: 200, backgroundColor: '#111', position: 'relative' },
-  thumbWeb:         { flex: 1, backgroundColor: '#111' },
+  card:        { borderRadius: 18, overflow: 'hidden', marginBottom: 16, borderWidth: 1.5 },
+  thumb:       { height: 200, backgroundColor: '#111', position: 'relative' },
+  thumbWeb:    { flex: 1, backgroundColor: '#111' },
   thumbPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  overlay:          { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
-  playBtn:          { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center' },
-  bottomRow:        { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge:            { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  badgeText:        { fontSize: 12, fontWeight: '700', color: '#FFF' },
-  ytBadge:          { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  ytText:           { fontSize: 11, fontWeight: '600', color: '#FFF' },
+  overlay:     { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
+  playBtn:     { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center' },
+  bottomRow:   { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  badge:       { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  badgeText:   { fontSize: 12, fontWeight: '700', color: '#FFF' },
+  ytBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  ytText:      { fontSize: 11, fontWeight: '600', color: '#FFF' },
 });
 
-// ─── PDFBlock cliquable (copie EXACTE SAT) ───────────────────────────────────
+// ─── Bloc PDF cliquable ───────────────────────────────────────────────────────
 function PDFBlock({ url, nom, color, index, onOpen }: {
   url: string; nom: string; color: string; index: number; onOpen: () => void;
 }) {
@@ -232,7 +222,7 @@ const pb = StyleSheet.create({
   arrow:   { width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
 });
 
-// ─── TextBlock (copie EXACTE SAT) ────────────────────────────────────────────
+// ─── Bloc texte ───────────────────────────────────────────────────────────────
 function TextBlock({ content }: { content: string }) {
   const paragraphs = content.split(/\n\n+/).filter(Boolean);
   return (
@@ -247,8 +237,8 @@ function TextBlock({ content }: { content: string }) {
           .replace(/^\*\*|\*\*$/g, '')
           .replace(/^[-•]\s*/, '')
           .replace(/^\d+\.\s*/, '');
-        if (isH1) return <Text key={i} style={tx.h1}>{clean}</Text>;
-        if (isH2) return <Text key={i} style={tx.h2}>{clean}</Text>;
+        if (isH1)    return <Text key={i} style={tx.h1}>{clean}</Text>;
+        if (isH2)    return <Text key={i} style={tx.h2}>{clean}</Text>;
         if (isBullet) return (
           <View key={i} style={tx.bulletRow}>
             <Text style={tx.bullet}>•</Text>
@@ -267,16 +257,16 @@ function TextBlock({ content }: { content: string }) {
   );
 }
 const tx = StyleSheet.create({
-  h1:        { fontSize: 20, fontWeight: '900', color: TEXT, marginBottom: 10, marginTop: 20, letterSpacing: -0.3 },
-  h2:        { fontSize: 17, fontWeight: '800', color: TEXT, marginBottom: 8, marginTop: 16, letterSpacing: -0.2 },
-  para:      { fontSize: 15, color: TEXT, lineHeight: 26, marginBottom: 14 },
-  bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 8, paddingLeft: 4 },
-  bullet:    { fontSize: 15, color: TEXT_MUTED, marginTop: 4, width: 14 },
-  numBullet: { fontSize: 14, color: TEXT_MUTED, marginTop: 4, fontWeight: '700', width: 20 },
-  bulletText:{ flex: 1, fontSize: 15, color: TEXT, lineHeight: 24 },
+  h1:         { fontSize: 20, fontWeight: '900', color: TEXT, marginBottom: 10, marginTop: 20, letterSpacing: -0.3 },
+  h2:         { fontSize: 17, fontWeight: '800', color: TEXT, marginBottom: 8,  marginTop: 16, letterSpacing: -0.2 },
+  para:       { fontSize: 15, color: TEXT, lineHeight: 26, marginBottom: 14 },
+  bulletRow:  { flexDirection: 'row', gap: 8, marginBottom: 8, paddingLeft: 4 },
+  bullet:     { fontSize: 15, color: TEXT_MUTED, marginTop: 4, width: 14 },
+  numBullet:  { fontSize: 14, color: TEXT_MUTED, marginTop: 4, fontWeight: '700', width: 20 },
+  bulletText: { flex: 1, fontSize: 15, color: TEXT, lineHeight: 24 },
 });
 
-// ─── SectionDivider (copie EXACTE SAT) ───────────────────────────────────────
+// ─── Séparateur de section ────────────────────────────────────────────────────
 function SectionDivider({ label, color }: { label: string; color: string }) {
   return (
     <View style={sd.row}>
@@ -295,72 +285,30 @@ const sd = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
 });
 
-// ─── API ─────────────────────────────────────────────────────────────────────
-async function fetchLessonAndQuiz(chapterId: string, lessonId: string) {
-  const [lessRes, quizRes] = await Promise.all([
-    api.get(`/courses/chapters/${chapterId}/lessons`),
-    api.get(`/quiz/chapter/${chapterId}`).catch(() => ({ data: null })),
-  ]);
-  const rawLessons: any[] = lessRes.data?.lessons ?? lessRes.data ?? [];
-  const raw = rawLessons.find((l: any) => l.id === lessonId);
+// ─── Écran principal ──────────────────────────────────────────────────────────
+export default function StudentSATLessonScreen({ route, navigation }: Props) {
+  const { lesson: initialLesson, unit } = route.params;
+  const domainColor = DOMAIN_COLOR[unit.domaine] || PRIMARY;
 
-  console.log('[LessonScreen] raw =>', JSON.stringify(raw, null, 2));
-
-  const lesson: LessonDetail | null = raw ? {
-    id: raw.id,
-    titre: raw.titre ?? raw.title ?? raw.nom ?? 'Leçon',
-    type: (raw.type ?? 'text').toLowerCase(),
-    // Multi-contenu — cherche tous les champs possibles
-    videoUrl:  extractVideoUrl(raw),
-    videoUrl2: extractVideoUrl2(raw),
-    pdfUrl:    extractPdfUrl(raw),
-    pdfNom:    raw.pdfNom ?? raw.pdf_nom ?? raw.titre ?? undefined,
-    pdfUrl2:   extractPdfUrl2(raw),
-    pdfNom2:   raw.pdfNom2 ?? raw.pdf_nom2 ?? undefined,
-    contenu:   raw.contenu ?? raw.content ?? raw.description ?? raw.texte ?? undefined,
-    duree:     raw.duree ?? raw.duration ?? raw.dureeMinutes ?? undefined,
-    isFree:    raw.isFree ?? false,
-    documents: raw.documents ?? raw.ressources ?? [],
-  } : null;
-
-  const qd = quizRes.data;
-  const qr = qd?.quiz ?? (Array.isArray(qd?.quizzes) ? qd.quizzes[0] : null) ?? (qd?.id ? qd : null);
-  const quiz: ChapterQuiz | null = qr?.id ? {
-    id: qr.id, titre: qr.titre ?? 'Quiz du chapitre',
-    nombreQuestions: qr.nombreQuestions ?? qr.questions?.length,
-  } : null;
-
-  return { lesson, quiz };
-}
-
-async function markComplete(lessonId: string) {
-  await api.post('/courses/progress', { lessonId, isCompleted: true, watchedSeconds: 0 });
-}
-
-// ─── ÉCRAN PRINCIPAL (copie EXACTE structure SAT) ────────────────────────────
-export default function StudentLessonScreen({ navigation, route }: Props) {
-  const { lessonId, lessonTitre, chapterId, subjectName } = route?.params ?? {};
-
-  const [lesson, setLesson]           = useState<LessonDetail | null>(null);
-  const [quiz, setQuiz]               = useState<ChapterQuiz | null>(null);
+  const [lesson, setLesson]           = useState<LessonDetail>(initialLesson);
   const [loading, setLoading]         = useState(true);
   const [completing, setCompleting]   = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [notes, setNotes]             = useState('');
-  const [openPdf, setOpenPdf]         = useState<{ url: string; nom: string } | null>(null);
-  const [openVideo, setOpenVideo]     = useState<{ url: string; titre: string } | null>(null);
+  const [isCompleted, setIsCompleted] = useState(initialLesson.isCompleted ?? false);
+
+  // State pour les modals
+  const [openPdf,   setOpenPdf]   = useState<{ url: string; nom: string } | null>(null);
+  const [openVideo, setOpenVideo] = useState<{ url: string; titre: string } | null>(null);
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    if (!chapterId || !lessonId) { setLoading(false); return; }
     (async () => {
       try {
-        const { lesson: l, quiz: q } = await fetchLessonAndQuiz(chapterId, lessonId);
-        setLesson(l); setQuiz(q);
-        setIsCompleted(l?.isCompleted ?? false);
-      } catch (e) { console.log('[LessonScreen] error', e); }
+        const { data } = await api.get(`/sat/lessons/${initialLesson.id}`);
+        setLesson(data.lesson || initialLesson);
+        setIsCompleted(data.lesson?.isCompleted ?? initialLesson.isCompleted ?? false);
+      } catch {}
       finally {
         setLoading(false);
         Animated.parallel([
@@ -369,70 +317,63 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
         ]).start();
       }
     })();
-  }, [lessonId, chapterId]);
+  }, [initialLesson.id]);
 
   const handleComplete = async () => {
-    if (isCompleted || completing || !lessonId) return;
+    if (isCompleted || completing) return;
     setCompleting(true);
-    try { await markComplete(lessonId); setIsCompleted(true); }
+    try { await api.post(`/sat/lessons/${lesson.id}/complete`); setIsCompleted(true); }
     catch {} finally { setCompleting(false); }
   };
 
-  // Détermine la couleur selon le type (comme SAT utilise domainColor)
-  const typeColor = lesson?.type?.toLowerCase().includes('video') ? '#EF4444'
-    : lesson?.type?.toLowerCase().includes('pdf') ? GOLD : PRIMARY;
-
-  // Contenu disponible (copie EXACTE logique SAT)
-  const hasVideo1  = !!(lesson?.videoUrl);
-  const hasVideo2  = !!(lesson?.videoUrl2);
-  const hasPDF1    = !!(lesson?.pdfUrl);
-  const hasPDF2    = !!(lesson?.pdfUrl2);
-  const hasText    = !!(lesson?.contenu);
+  // Déterminer quels contenus existent
+  const hasVideo1  = !!(lesson.videoUrl);
+  const hasVideo2  = !!(lesson.videoUrl2);
+  const hasPDF1    = !!(lesson.pdfUrl);
+  const hasPDF2    = !!(lesson.pdfUrl2);
+  const hasText    = !!(lesson.contenu);
   const hasContent = hasVideo1 || hasVideo2 || hasPDF1 || hasPDF2 || hasText;
 
+  // Compteurs pour les labels
   const videoCount = (hasVideo1 ? 1 : 0) + (hasVideo2 ? 1 : 0);
   const pdfCount   = (hasPDF1 ? 1 : 0) + (hasPDF2 ? 1 : 0);
 
-  // Couleur principale = couleur du premier type de contenu trouvé
-  const mainColor = hasVideo1 ? '#EF4444' : hasPDF1 ? GOLD : PRIMARY;
-
-  const displayTitre = lesson?.titre ?? lessonTitre ?? 'Leçon';
-
-  if (loading) return (
-    <View style={s.loadingView}><ActivityIndicator size="large" color={PRIMARY} /></View>
-  );
+  if (loading) {
+    return <View style={s.loadingView}><ActivityIndicator size="large" color={domainColor} /></View>;
+  }
 
   return (
     <View style={s.root}>
 
-      {/* ── Modals (copie EXACTE SAT) ── */}
-      {openPdf && <PDFModal url={openPdf.url} name={openPdf.nom} onClose={() => setOpenPdf(null)} />}
-      {openVideo && <VideoModal url={openVideo.url} titre={openVideo.titre} onClose={() => setOpenVideo(null)} />}
+      {/* ── Modals ── */}
+      {openPdf && (
+        <PDFModal url={openPdf.url} name={openPdf.nom} onClose={() => setOpenPdf(null)} />
+      )}
+      {openVideo && (
+        <VideoModal url={openVideo.url} titre={openVideo.titre} onClose={() => setOpenVideo(null)} />
+      )}
 
-      {/* ── Header (copie EXACTE SAT) ── */}
+      {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack?.()}
-          style={s.backBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
+        <TouchableOpacity onPress={navigation.goBack} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={22} color={TEXT} />
         </TouchableOpacity>
         <View style={s.headerCenter}>
-          <Text style={s.headerUnit} numberOfLines={1}>{subjectName ?? ''}</Text>
-          <Text style={s.headerLesson} numberOfLines={1}>{displayTitre}</Text>
+          <Text style={s.headerUnit} numberOfLines={1}>{unit.titre}</Text>
+          <Text style={s.headerLesson} numberOfLines={1}>{lesson.titre}</Text>
         </View>
         {isCompleted && <Ionicons name="checkmark-circle" size={24} color={SUCCESS} />}
       </View>
 
-      {/* Barre couleur (copie domainBar SAT) */}
-      <View style={[s.domainBar, { backgroundColor: mainColor }]} />
+      {/* Barre domaine */}
+      <View style={[s.domainBar, { backgroundColor: domainColor }]} />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
-          {/* ── Méta badges (copie EXACTE SAT) ── */}
+          {/* ── Méta ── */}
           <View style={s.metaRow}>
+            {/* Badges de contenu */}
             {hasVideo1 && (
               <View style={[s.typeBadge, { backgroundColor: '#EF444418' }]}>
                 <Ionicons name="play-circle" size={13} color="#EF4444" />
@@ -455,16 +396,10 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
                 <Text style={[s.typeLabel, { color: PRIMARY }]}>Cours</Text>
               </View>
             )}
-            {lesson?.duree && (
+            {lesson.dureeMinutes && (
               <View style={s.durationBadge}>
                 <Ionicons name="time-outline" size={13} color={TEXT_MUTED} />
-                <Text style={s.durationText}>{lesson.duree} min</Text>
-              </View>
-            )}
-            {lesson?.isFree && (
-              <View style={s.doneBadge}>
-                <Ionicons name="gift-outline" size={13} color={SUCCESS} />
-                <Text style={s.doneText}>Gratuit</Text>
+                <Text style={s.durationText}>{lesson.dureeMinutes} min</Text>
               </View>
             )}
             {isCompleted && (
@@ -475,22 +410,22 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
             )}
           </View>
 
-          {/* ── Titre (copie EXACTE SAT) ── */}
-          <Text style={s.lessonTitle}>{displayTitre}</Text>
-          <View style={[s.divider, { backgroundColor: mainColor + '30' }]} />
+          {/* ── Titre ── */}
+          <Text style={s.lessonTitle}>{lesson.titre}</Text>
+          <View style={[s.divider, { backgroundColor: domainColor + '30' }]} />
 
-          {/* ── CONTENUS MULTI (copie EXACTE logique SAT) ── */}
+          {/* ── CONTENUS (dans l'ordre : vidéo → PDF → texte) ── */}
 
           {/* Vidéo 1 */}
           {hasVideo1 && (
             <>
-              {(hasPDF1 || hasText || hasVideo2) && <SectionDivider label="📹 VIDÉO" color={mainColor} />}
+              {(hasPDF1 || hasText || hasVideo2) && <SectionDivider label="📹 VIDÉO" color={domainColor} />}
               <VideoBlock
-                url={lesson!.videoUrl!}
-                titre={displayTitre}
-                color={mainColor}
+                url={lesson.videoUrl!}
+                titre={lesson.titre}
+                color={domainColor}
                 index={1}
-                onOpen={() => setOpenVideo({ url: lesson!.videoUrl!, titre: displayTitre })}
+                onOpen={() => setOpenVideo({ url: lesson.videoUrl!, titre: lesson.titre })}
               />
             </>
           )}
@@ -498,24 +433,24 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
           {/* Vidéo 2 */}
           {hasVideo2 && (
             <VideoBlock
-              url={lesson!.videoUrl2!}
-              titre={`${displayTitre} — Partie 2`}
-              color={mainColor}
+              url={lesson.videoUrl2!}
+              titre={`${lesson.titre} — Partie 2`}
+              color={domainColor}
               index={2}
-              onOpen={() => setOpenVideo({ url: lesson!.videoUrl2!, titre: `${displayTitre} — Partie 2` })}
+              onOpen={() => setOpenVideo({ url: lesson.videoUrl2!, titre: `${lesson.titre} — Partie 2` })}
             />
           )}
 
           {/* PDF 1 */}
           {hasPDF1 && (
             <>
-              {(hasVideo1 || hasText || hasPDF2) && <SectionDivider label="📄 DOCUMENT" color={GOLD} />}
+              {(hasVideo1 || hasText || hasPDF2) && <SectionDivider label="📄 DOCUMENT" color={domainColor} />}
               <PDFBlock
-                url={lesson!.pdfUrl!}
-                nom={lesson?.pdfNom || displayTitre}
-                color={GOLD}
+                url={lesson.pdfUrl!}
+                nom={lesson.pdfNom || lesson.titre}
+                color={domainColor}
                 index={1}
-                onOpen={() => setOpenPdf({ url: lesson!.pdfUrl!, nom: lesson?.pdfNom || displayTitre })}
+                onOpen={() => setOpenPdf({ url: lesson.pdfUrl!, nom: lesson.pdfNom || lesson.titre })}
               />
             </>
           )}
@@ -523,36 +458,19 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
           {/* PDF 2 */}
           {hasPDF2 && (
             <PDFBlock
-              url={lesson!.pdfUrl2!}
-              nom={lesson?.pdfNom2 || `${displayTitre} — Document 2`}
-              color={GOLD}
+              url={lesson.pdfUrl2!}
+              nom={lesson.pdfNom2 || `${lesson.titre} — Document 2`}
+              color={domainColor}
               index={2}
-              onOpen={() => setOpenPdf({ url: lesson!.pdfUrl2!, nom: lesson?.pdfNom2 || `${displayTitre} — Document 2` })}
+              onOpen={() => setOpenPdf({ url: lesson.pdfUrl2!, nom: lesson.pdfNom2 || `${lesson.titre} — Document 2` })}
             />
           )}
 
-          {/* Texte */}
+          {/* Texte de cours */}
           {hasText && (
             <>
-              {(hasVideo1 || hasPDF1) && <SectionDivider label="📝 COURS" color={PRIMARY} />}
-              <TextBlock content={lesson!.contenu!} />
-            </>
-          )}
-
-          {/* Documents joints supplémentaires */}
-          {lesson?.documents && lesson.documents.length > 0 && (
-            <>
-              <SectionDivider label="📎 RESSOURCES" color={GOLD} />
-              {lesson.documents.map((doc, i) => (
-                <PDFBlock
-                  key={doc.id}
-                  url={doc.url ?? ''}
-                  nom={doc.nom}
-                  color={GOLD}
-                  index={i + 1}
-                  onOpen={() => doc.url && setOpenPdf({ url: doc.url!, nom: doc.nom })}
-                />
-              ))}
+              {(hasVideo1 || hasPDF1) && <SectionDivider label="📝 COURS" color={domainColor} />}
+              <TextBlock content={lesson.contenu!} />
             </>
           )}
 
@@ -565,22 +483,11 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {/* Notes personnelles */}
-          <SectionDivider label="✏️ MES NOTES" color={PRIMARY} />
-          <TextInput
-            style={s.notesInput}
-            placeholder="Écris tes notes ici…"
-            placeholderTextColor={TEXT_MUTED}
-            multiline value={notes}
-            onChangeText={setNotes}
-            textAlignVertical="top"
-          />
-
-          {/* ── Actions (copie EXACTE SAT) ── */}
+          {/* ── Actions ── */}
           <View style={s.actionsCard}>
             {!isCompleted ? (
               <TouchableOpacity
-                style={[s.completeBtn, { backgroundColor: mainColor }, completing && { opacity: 0.6 }]}
+                style={[s.completeBtn, { backgroundColor: domainColor }, completing && { opacity: 0.6 }]}
                 onPress={handleComplete}
                 disabled={completing}
                 activeOpacity={0.85}
@@ -599,20 +506,15 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
                 <Text style={s.completedInfoText}>Leçon complétée !</Text>
               </View>
             )}
-
-            {quiz && (
-              <TouchableOpacity
-                style={[s.quizBtn, { borderColor: PRIMARY + '50' }]}
-                onPress={() => navigation.navigate('StudentCourseQuiz', {
-                  quizId: quiz.id, quizTitre: quiz.titre, chapterId,
-                })}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="help-circle-outline" size={20} color={PRIMARY} />
-                <Text style={[s.quizBtnText, { color: PRIMARY }]}>Quiz du chapitre</Text>
-                <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[s.quizBtn, { borderColor: domainColor + '50' }]}
+              onPress={() => navigation.navigate('StudentSATLessonQuiz', { lesson, unit })}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="help-circle-outline" size={20} color={domainColor} />
+              <Text style={[s.quizBtnText, { color: domainColor }]}>Quiz de la leçon</Text>
+              <Ionicons name="arrow-forward" size={16} color={domainColor} />
+            </TouchableOpacity>
           </View>
 
         </Animated.View>
@@ -622,7 +524,6 @@ export default function StudentLessonScreen({ navigation, route }: Props) {
   );
 }
 
-// ─── Styles (copie EXACTE SAT) ────────────────────────────────────────────────
 const s = StyleSheet.create({
   root:          { flex: 1, backgroundColor: BG },
   loadingView:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
@@ -645,16 +546,11 @@ const s = StyleSheet.create({
   noContent:     { alignItems: 'center', paddingVertical: 48, gap: 12 },
   noContentTitle:{ fontSize: 16, fontWeight: '800', color: TEXT },
   noContentDesc: { fontSize: 13, color: TEXT_MUTED, textAlign: 'center' },
-  notesInput: {
-    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER,
-    borderRadius: 14, padding: 14, minHeight: 100,
-    fontSize: 14, color: TEXT, textAlignVertical: 'top', marginBottom: 8,
-  },
-  actionsCard:      { backgroundColor: CARD, borderRadius: 18, padding: 16, gap: 12, borderWidth: 1, borderColor: BORDER, marginTop: 8 },
-  completeBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 16, gap: 8 },
+  actionsCard:   { backgroundColor: CARD, borderRadius: 18, padding: 16, gap: 12, borderWidth: 1, borderColor: BORDER, marginTop: 8 },
+  completeBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 16, gap: 8 },
   completeBtnText:  { fontSize: 16, fontWeight: '800', color: '#FFF' },
   completedInfo:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 },
   completedInfoText:{ fontSize: 15, fontWeight: '700', color: SUCCESS },
-  quizBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 14, gap: 8, borderWidth: 1.5, backgroundColor: PRIMARY_LIGHT },
-  quizBtnText:      { fontSize: 15, fontWeight: '700', flex: 1, textAlign: 'center' },
+  quizBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 14, gap: 8, borderWidth: 1.5, backgroundColor: PRIMARY_LIGHT },
+  quizBtnText:   { fontSize: 15, fontWeight: '700', flex: 1, textAlign: 'center' },
 });

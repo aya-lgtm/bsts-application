@@ -13,6 +13,7 @@ import {
   Modal,
   Animated,
   FlatList,
+  ScrollView,           // ✅ AJOUT 1 — pour que l'erreur reste visible avec le clavier
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
@@ -73,9 +74,9 @@ function emailToKey(email: string): string {
   return email.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
-const API_URL = 'http://192.168.1.5:3000/api/v1' // ← ajouter ici
+const API_URL = 'http://192.168.1.5:3000/api/v1'
 
-const checkTokenValid = async (email: string): Promise<boolean> => { // ← puis ici
+const checkTokenValid = async (email: string): Promise<boolean> => {
   try {
     const token = await SecureStore.getItemAsync(`token_${emailToKey(email)}`)
     if (!token) return false
@@ -87,6 +88,7 @@ const checkTokenValid = async (email: string): Promise<boolean> => { // ← puis
     return false
   }
 }
+
 // ─── Component ──────────────────────────────────────────────────────────────
 const { width } = Dimensions.get('window')
 
@@ -109,6 +111,10 @@ export default function LoginScreen({
   const [loading, setLoading] = useState(false)
   const [bioLoading, setBioLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // ✅ AJOUT 2 — deux états d'erreur séparés (champ vide vs réponse API)
+  const [fieldError, setFieldError] = useState('')
+  const [apiError, setApiError] = useState('')
 
   // remembered account (selected via sheet)
   const [activeAccount, setActiveAccount] = useState<SavedAccount | null>(null)
@@ -231,6 +237,8 @@ export default function LoginScreen({
     setEmail(account.email)
     setPassword('')
     setError('')
+    setFieldError('')  // ✅ AJOUT 3 — reset des deux états
+    setApiError('')
   }
 
   // ── add new account ──────────────────────────────────────────────────────
@@ -240,6 +248,8 @@ export default function LoginScreen({
     setEmail('')
     setPassword('')
     setError('')
+    setFieldError('')  // ✅ AJOUT 4
+    setApiError('')
   }
 
   // ── remove account from sheet ────────────────────────────────────────────
@@ -255,40 +265,75 @@ export default function LoginScreen({
 
   // ── login ────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
-    const loginEmail = activeAccount ? activeAccount.email : email
-    if (!loginEmail || !password) {
-      setError('Veuillez remplir tous les champs')
+    const loginEmail = activeAccount ? activeAccount.email : email.trim()
+
+    // ✅ MODIF 5 — validation champs avec fieldError (jaune) au lieu de error (rouge)
+    if (!loginEmail) {
+      setFieldError("L'adresse email est requise")
+      setApiError('')
       return
     }
+    if (!loginEmail.includes('@')) {
+      setFieldError("L'adresse email n'est pas valide")
+      setApiError('')
+      return
+    }
+    if (!password) {
+      setFieldError('Le mot de passe est requis')
+      setApiError('')
+      return
+    }
+
     setLoading(true)
     setError('')
-   try {
-  const { user, accessToken, refreshToken } = await loginUser(loginEmail, password)
-  // loginUser a déjà sauvegardé accessToken, refreshToken, user globalement
+    setFieldError('')
+    setApiError('')
 
-  // Sauvegarder par email pour la bio
-  await SecureStore.setItemAsync(`user_${emailToKey(loginEmail)}`, JSON.stringify(user))
-  await SecureStore.setItemAsync(`token_${emailToKey(loginEmail)}`, accessToken)
-  await SecureStore.setItemAsync(`refresh_${emailToKey(loginEmail)}`, refreshToken)
+    try {
+      const { user, accessToken, refreshToken } = await loginUser(loginEmail, password)
+      // loginUser a déjà sauvegardé accessToken, refreshToken, user globalement
 
-  if (rememberMe || activeAccount) {
-    const acc: SavedAccount = {
-      email: loginEmail,
-      name: makeName(user),
-      initials: makeInitials(user),
+      // Sauvegarder par email pour la bio
+      await SecureStore.setItemAsync(`user_${emailToKey(loginEmail)}`, JSON.stringify(user))
+      await SecureStore.setItemAsync(`token_${emailToKey(loginEmail)}`, accessToken)
+      await SecureStore.setItemAsync(`refresh_${emailToKey(loginEmail)}`, refreshToken)
+
+      if (rememberMe || activeAccount) {
+        const acc: SavedAccount = {
+          email: loginEmail,
+          name: makeName(user),
+          initials: makeInitials(user),
+        }
+        await saveAccount(acc)
+        await SecureStore.setItemAsync('remember_me', 'true')
+        await SecureStore.setItemAsync('remembered_email', loginEmail)
+      }
+
+      onFinish(user.role)
+    } catch (e: any) {
+      console.log('Login error:', e?.message, e?.response?.data)
+
+      // ✅ MODIF 6 — messages d'erreur précis selon le code HTTP
+      const status  = e?.response?.status
+      const message = e?.response?.data?.message
+
+      if (status === 401) {
+        setApiError('Email ou mot de passe incorrect')
+      } else if (status === 400) {
+        setApiError(message ?? 'Données invalides')
+      } else if (status === 403) {
+        setApiError('Votre compte est suspendu. Contactez un administrateur.')
+      } else if (!e?.response) {
+        setApiError('Impossible de joindre le serveur. Vérifiez votre connexion.')
+      } else {
+        setApiError(message ?? 'Une erreur est survenue, réessayez.')
+      }
+
+      // on garde aussi l'ancien error pour compatibilité
+      setError(e?.response?.data?.message || e?.message || 'Erreur de connexion')
+    } finally {
+      setLoading(false)
     }
-    await saveAccount(acc)
-    await SecureStore.setItemAsync('remember_me', 'true')
-    await SecureStore.setItemAsync('remembered_email', loginEmail)
-  }
-
-  onFinish(user.role)
-} catch (e: any) {
-  console.log('Login error:', e?.message, e?.response?.data)
-  setError(e?.response?.data?.message || e?.message || 'Erreur de connexion')
-} finally {
-  setLoading(false)
-}
   }
 
   // ── biometric for active remembered account ──────────────────────────────
@@ -299,6 +344,7 @@ const handleBiometric = async () => {
   const storedUser = await SecureStore.getItemAsync(`user_${emailToKey(activeAccount.email)}`)
   if (!storedUser) {
     setError('Session expirée, veuillez vous reconnecter avec votre mot de passe.')
+    setApiError('Session expirée, veuillez vous reconnecter avec votre mot de passe.')
     return
   }
 
@@ -310,6 +356,7 @@ const handleBiometric = async () => {
   const bioEnabled = await SecureStore.getItemAsync(bioKey)
   if (bioEnabled !== 'true') {
     setError('Empreinte non activée pour ce compte.')
+    setApiError('Empreinte non activée pour ce compte.')
     return
   }
 
@@ -321,6 +368,31 @@ const handleBiometric = async () => {
   if (initializing) return null
 
   const isRememberedMode = !!activeAccount
+
+  // ✅ AJOUT 7 — composant ErrorBox inline (champ = jaune, API = rouge)
+  const ErrorBox = () => {
+    const msg = fieldError || apiError
+    if (!msg) return null
+    const isField = !!fieldError
+    return (
+      <View style={[
+        styles.errorBox,
+        isField ? styles.errorBoxField : styles.errorBoxApi,
+      ]}>
+        <Ionicons
+          name={isField ? 'alert-circle-outline' : 'close-circle-outline'}
+          size={16}
+          color={isField ? '#D4A017' : '#E24B4A'}
+        />
+        <Text style={[
+          styles.errorText,
+          isField ? styles.errorTextField : styles.errorTextApi,
+        ]}>
+          {msg}
+        </Text>
+      </View>
+    )
+  }
 
   return (
     <KeyboardAvoidingView
@@ -335,7 +407,13 @@ const handleBiometric = async () => {
         <Ionicons name="person-add-outline" size={22} color="#FFFFFF" />
       </TouchableOpacity>
 
-      <View style={{ flex: 1 }}>
+      {/* ✅ MODIF 8 — ScrollView remplace View pour que l'erreur reste visible avec le clavier */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.content, { paddingTop: insets.top + 70 }]}>
           {/* ── Brand ── */}
           <Image
@@ -364,7 +442,13 @@ const handleBiometric = async () => {
                   <Text style={styles.rememberedSub}>
                     Connectez-vous pour continuer
                   </Text>
-                  <TouchableOpacity onPress={() => { setActiveAccount(null); setEmail(''); setPassword('') }}>
+                  <TouchableOpacity onPress={() => {
+                    setActiveAccount(null)
+                    setEmail('')
+                    setPassword('')
+                    setFieldError('')   // ✅ AJOUT 9
+                    setApiError('')
+                  }}>
                     <Text style={styles.switchAccountTextInline}>
                       Changer de compte
                     </Text>
@@ -373,7 +457,11 @@ const handleBiometric = async () => {
               </View>
 
               {/* Password input */}
-              <View style={styles.inputWrapper}>
+              {/* ✅ MODIF 10 — bordure rouge si erreur */}
+              <View style={[
+                styles.inputWrapper,
+                !!(fieldError || apiError) && styles.inputWrapperError,
+              ]}>
                 <Ionicons
                   name="lock-closed-outline"
                   size={22}
@@ -385,7 +473,11 @@ const handleBiometric = async () => {
                   placeholder="Mot de passe"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(v) => {
+                    setPassword(v)
+                    setFieldError('')   // ✅ AJOUT 11 — reset erreur en tapant
+                    setApiError('')
+                  }}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                   <Ionicons
@@ -395,6 +487,9 @@ const handleBiometric = async () => {
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* ✅ AJOUT 12 — ErrorBox ici, AVANT le bouton, visible sous le champ */}
+              <ErrorBox />
 
               {/* Sign In + Biometric (only in remembered mode) */}
               <View style={styles.signInRow}>
@@ -438,7 +533,11 @@ const handleBiometric = async () => {
               </Text>
 
               {/* Email */}
-              <View style={styles.inputWrapper}>
+              {/* ✅ MODIF 13 — bordure rouge si erreur */}
+              <View style={[
+                styles.inputWrapper,
+                !!(fieldError || apiError) && styles.inputWrapperError,
+              ]}>
                 <Ionicons
                   name="mail-outline"
                   size={22}
@@ -449,14 +548,21 @@ const handleBiometric = async () => {
                   style={styles.input}
                   placeholder="Email"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(v) => {
+                    setEmail(v)
+                    setFieldError('')   // ✅ AJOUT 14 — reset erreur en tapant
+                    setApiError('')
+                  }}
                   autoCapitalize="none"
                   keyboardType="email-address"
                 />
               </View>
 
               {/* Password */}
-              <View style={styles.inputWrapper}>
+              <View style={[
+                styles.inputWrapper,
+                !!(fieldError || apiError) && styles.inputWrapperError,
+              ]}>
                 <Ionicons
                   name="lock-closed-outline"
                   size={22}
@@ -468,7 +574,11 @@ const handleBiometric = async () => {
                   placeholder="Mot de passe"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(v) => {
+                    setPassword(v)
+                    setFieldError('')   // ✅ AJOUT 15 — reset erreur en tapant
+                    setApiError('')
+                  }}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                   <Ionicons
@@ -478,6 +588,9 @@ const handleBiometric = async () => {
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* ✅ AJOUT 16 — ErrorBox ici, AVANT les options remember/forgot */}
+              <ErrorBox />
 
               {/* Remember + Forgot */}
               <View style={styles.rememberRow}>
@@ -521,7 +634,8 @@ const handleBiometric = async () => {
             </View>
           )}
 
-          {error !== '' && (
+          {/* ancien error text conservé pour compatibilité */}
+          {error !== '' && !fieldError && !apiError && (
             <Text style={styles.errorText}>{error}</Text>
           )}
         </View>
@@ -553,7 +667,7 @@ const handleBiometric = async () => {
             </View>
           </View>
         </View>
-      </View>
+      </ScrollView>
 
       {/* ── User Switcher Bottom Sheet ── */}
       <Modal
@@ -705,10 +819,55 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 14,
   },
+  // ✅ AJOUT 17 — bordure rouge sur les champs en erreur
+  inputWrapperError: {
+    borderColor: '#E24B4A',
+    borderWidth: 1.5,
+  },
   input: {
     flex: 1,
     fontSize: width * 0.038,
     color: '#2C2C2A',
+  },
+  // ✅ AJOUT 18 — styles ErrorBox (remplace l'ancien errorText seul)
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    width: '100%',
+  },
+  errorBoxField: {
+    backgroundColor: '#FFF8E7',
+    borderWidth: 1,
+    borderColor: '#F5E6B0',
+  },
+  errorBoxApi: {
+    backgroundColor: '#FDECEC',
+    borderWidth: 1,
+    borderColor: '#F5C0C0',
+  },
+  errorTextField: {
+    color: '#D4A017',
+    flex: 1,
+    fontSize: width * 0.033,
+    fontWeight: '500',
+  },
+  errorTextApi: {
+    color: '#E24B4A',
+    flex: 1,
+    fontSize: width * 0.033,
+    fontWeight: '500',
+  },
+  // ancien style conservé
+  errorText: {
+    color: '#E24B4A',
+    fontSize: width * 0.035,
+    marginTop: 8,
+    textAlign: 'center',
   },
   rememberRow: {
     flexDirection: 'row',
@@ -782,12 +941,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
-  },
-  errorText: {
-    color: '#E24B4A',
-    fontSize: width * 0.035,
-    marginTop: 8,
-    textAlign: 'center',
   },
   bottomShapes: {
     height: 220,

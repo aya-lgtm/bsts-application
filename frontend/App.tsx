@@ -4,9 +4,6 @@ import { View, Text, StyleSheet } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as SecureStore from 'expo-secure-store'
 
-// ─── DIAGNOSTIC: on importe un par un et on affiche quel screen plante ───────
-// Si l'erreur disparaît → le dernier import commenté est le coupable
-
 import SplashScreen from './src/screens/SplashScreen'
 import OnboardingScreen from './src/screens/OnboardingScreen'
 import LoginScreen from './src/screens/LoginScreen'
@@ -19,9 +16,10 @@ import RegisterOTPScreen from './src/screens/RegisterOTPScreen'
 import ParentNavigator from './src/screens/parent/ParentNavigator'
 import ProfessorNavigator from './src/screens/professor/ProfessorNavigator'
 import StudentNavigator from './src/screens/student/StudentNavigator'
-import { NavigationContainer } from '@react-navigation/native'
+import CollegeStudentNavigator from './src/screens/COLLEGE_STUDENT/CollegeStudentNavigator'
+import SuperAdminNavigator from './src/screens/SUPER_ADMIN/SuperAdminNavigator'
 
-// ─── Vérification au démarrage ─────────────────────────────────────────────
+// ─── Vérification au démarrage ────────────────────────────────────────────────
 const screens: Record<string, any> = {
   SplashScreen,
   OnboardingScreen,
@@ -35,6 +33,8 @@ const screens: Record<string, any> = {
   ParentNavigator,
   ProfessorNavigator,
   StudentNavigator,
+  CollegeStudentNavigator,
+  SuperAdminNavigator,
 }
 
 const invalidScreens = Object.entries(screens)
@@ -42,7 +42,7 @@ const invalidScreens = Object.entries(screens)
   .map(([name]) => name)
 
 if (invalidScreens.length > 0) {
-  console.error('❌ SCREENS INVALIDES (retournent un objet au lieu d\'une fonction):', invalidScreens)
+  console.error('❌ SCREENS INVALIDES :', invalidScreens)
 } else {
   console.log('✅ Tous les screens sont valides')
 }
@@ -51,18 +51,32 @@ if (invalidScreens.length > 0) {
 
 type Screen =
   | 'splash' | 'onboarding' | 'login'
-  | 'home_student' | 'home_admin' | 'home_professor' | 'home_parent'
+  | 'home_student' | 'home_admin' | 'home_professor'
+  | 'home_parent'  | 'home_college_student'
+  | 'home_super_admin'
   | 'register' | 'forgot_password' | 'otp'
   | 'reset_password' | 'password_success' | 'register_otp'
 
+// ✅ FIX — fonction pure qui mappe un role → Screen, sans lire SecureStore
+function roleToScreen(role: string): Screen {
+  switch (role) {
+    case 'SUPER_ADMIN':     return 'home_super_admin'
+    case 'ADMIN':           return 'home_admin'
+    case 'PROFESSOR':       return 'home_professor'
+    case 'PARENT':          return 'home_parent'
+    case 'COLLEGE_STUDENT': return 'home_college_student'
+    default:                return 'home_student'
+  }
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('splash')
+  const [screen, setScreen]                 = useState<Screen>('splash')
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null)
-  const [resetEmail, setResetEmail] = useState('')
-  const [resetUserId, setResetUserId] = useState('')
-  const [resetOtpCode, setResetOtpCode] = useState('')
+  const [resetEmail, setResetEmail]         = useState('')
+  const [resetUserId, setResetUserId]       = useState('')
+  const [resetOtpCode, setResetOtpCode]     = useState('')
   const [registerUserId, setRegisterUserId] = useState('')
-  const [registerEmail, setRegisterEmail] = useState('')
+  const [registerEmail, setRegisterEmail]   = useState('')
 
   useEffect(() => {
     AsyncStorage.getItem('onboarding_done').then((value) => {
@@ -79,19 +93,16 @@ export default function App() {
     setScreen('login')
   }
 
-  const handleLoginFinish = async () => {
-    const userStr = await SecureStore.getItemAsync('user')
-    if (!userStr) { setScreen('login'); return }
-    const user = JSON.parse(userStr)
-    switch (user.role) {
-      case 'ADMIN':     setScreen('home_admin'); break
-      case 'PROFESSOR': setScreen('home_professor'); break
-      case 'PARENT':    setScreen('home_parent'); break
-      default:          setScreen('home_student'); break
-    }
+  // ✅ FIX — reçoit le role directement depuis LoginScreen (plus de relecture SecureStore)
+  // LoginScreen appelle onFinish(user.role) → on utilise ce role immédiatement
+  // Pas de race condition possible entre l'écriture et la lecture SecureStore
+  const handleLoginFinish = (role: string) => {
+    console.log('🔍 ROLE REÇU dans handleLoginFinish:', role)
+    const targetScreen = roleToScreen(role)
+    console.log('🔍 REDIRECTION VERS:', targetScreen)
+    setScreen(targetScreen)
   }
 
-  // ── Si un screen est invalide, afficher un écran de diagnostic ──────────
   if (invalidScreens.length > 0) {
     return (
       <SafeAreaProvider>
@@ -124,19 +135,24 @@ export default function App() {
         />
       )}
       {screen === 'home_student' && (
-  <StudentNavigator onLogout={() => setScreen('login')} />
-)}
-
+        <StudentNavigator onLogout={() => setScreen('login')} />
+      )}
       {screen === 'home_admin' && (
         <View style={[styles.container, { backgroundColor: '#1a1a2e' }]}>
           <Text style={styles.text}>⚙️ Dashboard Admin</Text>
         </View>
       )}
       {screen === 'home_professor' && (
-  <ProfessorNavigator onLogout={() => setScreen('login')} />
-)}
+        <ProfessorNavigator onLogout={() => setScreen('login')} />
+      )}
       {screen === 'home_parent' && (
         <ParentNavigator onLogout={() => setScreen('login')} />
+      )}
+      {screen === 'home_college_student' && (
+        <CollegeStudentNavigator onLogout={() => setScreen('login')} />
+      )}
+      {screen === 'home_super_admin' && (
+        <SuperAdminNavigator onLogout={() => setScreen('login')} />
       )}
       {screen === 'register' && (
         <RegisterScreen
@@ -195,5 +211,5 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  text: { color: '#FFFFFF', fontSize: 18 },
+  text:      { color: '#FFFFFF', fontSize: 18 },
 })

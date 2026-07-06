@@ -1,9 +1,16 @@
 /**
  * StudentChatScreen.tsx — Style WhatsApp
- * - Liste conversations vivante avec animations
- * - Mode sélection (appui long) : archive / suppression groupée
- * - Tiroir (drawer) accessible via le bouton filtre
- * - Indicateur en ligne, badges non lus, aperçu du dernier message
+ * Filtres 100% fonctionnels :
+ *  • Tous         → toutes les conversations NON archivées
+ *  • Non lus      → conversations avec unreadCount > 0
+ *  • Favoris      → toggle favori (étoile) avec API + optimistic update
+ *  • Archivés     → conversations archivées, désarchivage depuis la liste
+ *  • Signalements → conversations dont l'autre membre est signalé
+ *
+ * Actions sur sélection multiple (appui long) :
+ *  • Archiver / Désarchiver selon le filtre actif
+ *  • Supprimer
+ *  • Ajouter / Retirer des favoris
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,19 +37,19 @@ import { io, Socket } from 'socket.io-client';
 import api from '../../services/auth.service';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
-const PRIMARY      = '#0D6B5E';
-const PRIMARY_DARK = '#0A5449';
+const PRIMARY       = '#0D6B5E';
 const PRIMARY_LIGHT = '#E6F3F1';
-const BG           = '#FFFFFF';
-const SURFACE      = '#FFFFFF';
-const SURFACE2     = '#F0F2F5';
-const TEXT         = '#111B21';
-const TEXT_MUTED   = '#667781';
-const BORDER       = '#E9EDEF';
-const ONLINE       = '#0D6B5E';
-const UNREAD_BG    = '#0D6B5E';
-const SELECTED_BG  = '#D9EDE9';
-const DANGER       = '#DC3545';
+const BG            = '#FFFFFF';
+const SURFACE       = '#FFFFFF';
+const SURFACE2      = '#F0F2F5';
+const TEXT          = '#111B21';
+const TEXT_MUTED    = '#667781';
+const BORDER        = '#E9EDEF';
+const ONLINE        = '#0D6B5E';
+const UNREAD_BG     = '#0D6B5E';
+const SELECTED_BG   = '#D9EDE9';
+const DANGER        = '#DC3545';
+const WARN          = '#F59E0B';
 
 const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -55,11 +62,12 @@ type OtherMember = {
   prenom: string;
   photo?: string | null;
   matiere?: string | null;
+  isReported?: boolean;
 };
 
 type LastMessage = {
   content: string;
-  fileType?: 'TEXT' | 'IMAGE' | 'PDF' | 'AUDIO';
+  fileType?: 'TEXT' | 'IMAGE' | 'PDF' | 'AUDIO' | 'VIDEO';
   createdAt: string;
   senderId: string;
 };
@@ -113,6 +121,7 @@ function getLastMessagePreview(msg: LastMessage | null, isMine: boolean): string
   if (!msg) return 'Appuie pour commencer';
   const prefix = isMine ? 'Vous : ' : '';
   if (msg.fileType === 'IMAGE') return `${prefix}📷 Photo`;
+  if (msg.fileType === 'VIDEO') return `${prefix}🎬 Vidéo`;
   if (msg.fileType === 'PDF') return `${prefix}📎 ${msg.content}`;
   if (msg.fileType === 'AUDIO') return `${prefix}🎤 Message vocal`;
   return `${prefix}${msg.content}`;
@@ -134,7 +143,10 @@ function Avatar({ member, online, size = 50, selected }: {
         borderWidth: selected ? 2 : 0, borderColor: PRIMARY,
       }}>
         {selected ? (
-          <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{
+            width: size, height: size, borderRadius: size / 2,
+            backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center',
+          }}>
             <Ionicons name="checkmark" size={size * 0.45} color="#FFF" />
           </View>
         ) : member?.photo ? (
@@ -156,12 +168,116 @@ function Avatar({ member, online, size = 50, selected }: {
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Swipeable Row (glisser pour actions rapides) ─────────────────────────────
+function ConvRow({
+  item, myId, isOnline, isSelected,
+  onPress, onLongPress,
+  onToggleFavorite, onToggleArchive,
+}: {
+  item: ConversationDTO;
+  myId: string | null;
+  isOnline: boolean;
+  isSelected: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+  onToggleFavorite: () => void;
+  onToggleArchive: () => void;
+}) {
+  const lastMsg = getLastMessage(item);
+  const unread = item.unreadCount || 0;
+  const isMine = lastMsg?.senderId === myId;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [swiped, setSwiped] = useState(false);
+
+  const swipeOpen = () => {
+    Animated.spring(translateX, { toValue: -120, useNativeDriver: true, friction: 8 }).start();
+    setSwiped(true);
+  };
+  const swipeClose = () => {
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
+    setSwiped(false);
+  };
+
+  return (
+    <View style={{ overflow: 'hidden', backgroundColor: BG }}>
+      {/* Actions cachées derrière */}
+      <View style={s.swipeActions}>
+        <TouchableOpacity
+          style={[s.swipeAction, { backgroundColor: item.isFavorite ? WARN : '#F59E0B' }]}
+          onPress={() => { swipeClose(); onToggleFavorite(); }}
+        >
+          <Ionicons name={item.isFavorite ? 'star' : 'star-outline'} size={22} color="#FFF" />
+          <Text style={s.swipeActionText}>{item.isFavorite ? 'Retirer' : 'Favori'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.swipeAction, { backgroundColor: item.isArchived ? PRIMARY : '#607D8B' }]}
+          onPress={() => { swipeClose(); onToggleArchive(); }}
+        >
+          <Ionicons name={item.isArchived ? 'archive' : 'archive-outline'} size={22} color="#FFF" />
+          <Text style={s.swipeActionText}>{item.isArchived ? 'Désarchiver' : 'Archiver'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Ligne principale animée */}
+      <Animated.View style={{ transform: [{ translateX }] }}>
+        <TouchableOpacity
+          style={[s.convRow, isSelected && s.convRowSelected]}
+          onPress={() => { if (swiped) { swipeClose(); return; } onPress(); }}
+          onLongPress={onLongPress}
+          activeOpacity={0.6}
+        >
+          <Avatar member={item.otherMember} online={isOnline} selected={isSelected} />
+
+          <View style={s.convBody}>
+            <View style={s.convTop}>
+              <View style={s.convNameRow}>
+                {item.isFavorite && (
+                  <Ionicons name="star" size={12} color={WARN} style={{ marginRight: 4 }} />
+                )}
+                {item.otherMember?.isReported && (
+                  <Ionicons name="flag" size={12} color={DANGER} style={{ marginRight: 4 }} />
+                )}
+                <Text style={[s.convName, unread > 0 && s.convNameBold]} numberOfLines={1}>
+                  {getDisplayName(item)}
+                </Text>
+              </View>
+              <Text style={[s.convTime, unread > 0 && { color: PRIMARY }]}>
+                {formatTime(lastMsg?.createdAt || item.createdAt)}
+              </Text>
+            </View>
+
+            {item.otherMember?.matiere && (
+              <Text style={s.convMatiere}>{item.otherMember.matiere}</Text>
+            )}
+
+            <View style={s.convBottom}>
+              {isMine && lastMsg && (
+                <Ionicons name="checkmark-done" size={14} color={PRIMARY} style={{ marginRight: 4 }} />
+              )}
+              <Text style={[s.convPreview, unread > 0 && s.convPreviewBold]} numberOfLines={1}>
+                {getLastMessagePreview(lastMsg, isMine)}
+              </Text>
+              {unread > 0 && (
+                <View style={s.unreadBadge}>
+                  <Text style={s.unreadText}>{unread > 99 ? '99+' : unread}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 type Props = {
   navigation: { navigate: (screen: string, params?: any) => void };
+  onUnreadCountChange?: (count: number) => void;
 };
 
-export default function StudentChatScreen({ navigation }: Props) {
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function StudentChatScreen({ navigation, onUnreadCountChange }: Props) {
   const [activeSection, setActiveSection] = useState<SidebarSection>('conversations');
   const [search, setSearch] = useState('');
   const [conversations, setConversations] = useState<ConversationDTO[]>([]);
@@ -170,72 +286,123 @@ export default function StudentChatScreen({ navigation }: Props) {
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [myId, setMyId] = useState<string | null>(null);
 
-  // ── Mode sélection ──
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const isSelecting = selectedIds.size > 0;
 
-  // ── Drawer ──
   const [drawerVisible, setDrawerVisible] = useState(false);
-
-  // ── Picker professeurs ──
   const [pickerVisible, setPickerVisible] = useState(false);
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [loadingProfessors, setLoadingProfessors] = useState(false);
   const [startingWith, setStartingWith] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
-  const selectionBarAnim = useRef(new Animated.Value(0)).current;
 
-  // Animate selection bar
-  useEffect(() => {
-    Animated.spring(selectionBarAnim, {
-      toValue: isSelecting ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-    }).start();
-  }, [isSelecting]);
-
+  // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     api.get('/auth/me')
       .then(({ data }) => setMyId(data.user?.id || data.id || null))
       .catch(() => {});
   }, []);
 
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchConversations = useCallback(async () => {
     try {
       const { data } = await api.get('/chat');
-      setConversations((data.conversations || []).filter((c: ConversationDTO) => c.type === 'DIRECT'));
+      setConversations(
+        (data.conversations || []).filter((c: ConversationDTO) => c.type === 'DIRECT')
+      );
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
+  // ── Socket ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const token = (api.defaults?.headers?.common?.['Authorization'] as string)?.replace('Bearer ', '') || '';
-    const socket: Socket = io(SOCKET_URL, { auth: { token }, transports: ['websocket'], reconnection: true });
+    const token = (api.defaults?.headers?.common?.['Authorization'] as string)
+      ?.replace('Bearer ', '') || '';
+    const socket: Socket = io(SOCKET_URL, {
+      auth: { token }, transports: ['websocket'], reconnection: true,
+    });
     socketRef.current = socket;
+
     socket.on('new_message', (p: { conversationId: string; message: LastMessage }) => {
       setConversations(prev => prev.map(c =>
-        c.id === p.conversationId ? { ...c, lastMessage: p.message, unreadCount: (c.unreadCount || 0) + 1 } : c
+        c.id === p.conversationId
+          ? { ...c, lastMessage: p.message, unreadCount: (c.unreadCount || 0) + 1 }
+          : c
       ));
     });
     socket.on('online_users', (ids: string[]) => setOnlineUsers(new Set(ids)));
     socket.on('user_online', (uid: string) => setOnlineUsers(p => new Set(p).add(uid)));
-    socket.on('user_offline', (uid: string) => setOnlineUsers(p => { const n = new Set(p); n.delete(uid); return n; }));
+    socket.on('user_offline', (uid: string) => setOnlineUsers(p => {
+      const n = new Set(p); n.delete(uid); return n;
+    }));
     socket.on('messages_read', (p: { conversationId: string }) =>
-      setConversations(prev => prev.map(c => c.id === p.conversationId ? { ...c, unreadCount: 0 } : c))
+      setConversations(prev => prev.map(c =>
+        c.id === p.conversationId ? { ...c, unreadCount: 0 } : c
+      ))
     );
     return () => { socket.disconnect(); };
   }, []);
 
-  // ── Filtres ──
+  // ── Compteurs ─────────────────────────────────────────────────────────────
+  const totalUnread = useMemo(
+    () => conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0),
+    [conversations]
+  );
+  const unreadCount = useMemo(
+    () => conversations.filter(c => (c.unreadCount || 0) > 0).length,
+    [conversations]
+  );
+  const favCount = useMemo(
+    () => conversations.filter(c => c.isFavorite && !c.isArchived).length,
+    [conversations]
+  );
+  const archiveCount = useMemo(
+    () => conversations.filter(c => c.isArchived).length,
+    [conversations]
+  );
+  const reportCount = useMemo(
+    () => conversations.filter(c => c.otherMember?.isReported).length,
+    [conversations]
+  );
+
+  useEffect(() => { onUnreadCountChange?.(totalUnread); }, [totalUnread, onUnreadCountChange]);
+
+  // ── Filtres ───────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...conversations];
-    if (activeSection === 'nonlus') list = list.filter(c => (c.unreadCount || 0) > 0);
-    if (activeSection === 'favoris') list = list.filter(c => c.isFavorite);
-    if (activeSection === 'archives') list = list.filter(c => c.isArchived);
-    if (search.trim()) list = list.filter(c => getDisplayName(c).toLowerCase().includes(search.trim().toLowerCase()));
+
+    switch (activeSection) {
+      case 'conversations':
+        // Tous sauf archivés
+        list = list.filter(c => !c.isArchived);
+        break;
+      case 'nonlus':
+        // Non lus et non archivés
+        list = list.filter(c => !c.isArchived && (c.unreadCount || 0) > 0);
+        break;
+      case 'favoris':
+        // Favoris seulement (archivés exclus)
+        list = list.filter(c => c.isFavorite && !c.isArchived);
+        break;
+      case 'archives':
+        // Archivés seulement
+        list = list.filter(c => c.isArchived);
+        break;
+      case 'signalements':
+        // Membres signalés
+        list = list.filter(c => c.otherMember?.isReported);
+        break;
+    }
+
+    if (search.trim()) {
+      list = list.filter(c =>
+        getDisplayName(c).toLowerCase().includes(search.trim().toLowerCase())
+      );
+    }
+
     return list.sort((a, b) => {
       const da = getLastMessage(a)?.createdAt || a.createdAt || '';
       const db = getLastMessage(b)?.createdAt || b.createdAt || '';
@@ -243,10 +410,7 @@ export default function StudentChatScreen({ navigation }: Props) {
     });
   }, [conversations, search, activeSection]);
 
-  const totalUnread = useMemo(() => conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0), [conversations]);
-  const unreadCount = useMemo(() => conversations.filter(c => (c.unreadCount || 0) > 0).length, [conversations]);
-
-  // ── Sélection ──
+  // ── Sélection ─────────────────────────────────────────────────────────────
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const n = new Set(prev);
@@ -254,18 +418,88 @@ export default function StudentChatScreen({ navigation }: Props) {
       return n;
     });
   };
-
   const clearSelection = () => setSelectedIds(new Set());
 
-  const archiveSelected = async () => {
+  // Toutes les conv sélectionnées sont-elles favorites ?
+  const allSelectedFav = useMemo(() => {
     const ids = [...selectedIds];
-    clearSelection();
-    setConversations(prev => prev.map(c => ids.includes(c.id) ? { ...c, isArchived: true } : c));
+    return ids.length > 0 && ids.every(id => conversations.find(c => c.id === id)?.isFavorite);
+  }, [selectedIds, conversations]);
+
+  // Toutes archivées ?
+  const allSelectedArchived = useMemo(() => {
+    const ids = [...selectedIds];
+    return ids.length > 0 && ids.every(id => conversations.find(c => c.id === id)?.isArchived);
+  }, [selectedIds, conversations]);
+
+  // ── Toggle Favori (optimistic) ────────────────────────────────────────────
+  const toggleFavorite = async (convId: string) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv) return;
+    const newVal = !conv.isFavorite;
+
+    // Optimistic update
+    setConversations(prev =>
+      prev.map(c => c.id === convId ? { ...c, isFavorite: newVal } : c)
+    );
     try {
-      await Promise.all(ids.map(id => api.patch(`/chat/${id}/archive`, { archived: true })));
+      await api.patch(`/chat/${convId}/favorite`, { favorite: newVal });
+    } catch {
+      // Rollback
+      setConversations(prev =>
+        prev.map(c => c.id === convId ? { ...c, isFavorite: !newVal } : c)
+      );
+      Alert.alert('Erreur', 'Impossible de modifier les favoris.');
+    }
+  };
+
+  // Toggle favoris pour la sélection multiple
+  const toggleFavoriteSelected = async () => {
+    const ids = [...selectedIds];
+    const newVal = !allSelectedFav;
+    clearSelection();
+    setConversations(prev =>
+      prev.map(c => ids.includes(c.id) ? { ...c, isFavorite: newVal } : c)
+    );
+    try {
+      await Promise.all(ids.map(id => api.patch(`/chat/${id}/favorite`, { favorite: newVal })));
     } catch { fetchConversations(); }
   };
 
+  // ── Toggle Archive (optimistic) ───────────────────────────────────────────
+  const toggleArchive = async (convId: string) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv) return;
+    const newVal = !conv.isArchived;
+
+    setConversations(prev =>
+      prev.map(c => c.id === convId ? { ...c, isArchived: newVal } : c)
+    );
+    try {
+      await api.patch(`/chat/${convId}/archive`, { archived: newVal });
+      // Toast textuel discret
+    } catch {
+      setConversations(prev =>
+        prev.map(c => c.id === convId ? { ...c, isArchived: !newVal } : c)
+      );
+      Alert.alert('Erreur', 'Impossible de modifier l\'archive.');
+    }
+  };
+
+  // Toggle archive pour la sélection multiple
+  const toggleArchiveSelected = async () => {
+    const ids = [...selectedIds];
+    const newVal = !allSelectedArchived;
+    clearSelection();
+    setConversations(prev =>
+      prev.map(c => ids.includes(c.id) ? { ...c, isArchived: newVal } : c)
+    );
+    try {
+      await Promise.all(ids.map(id => api.patch(`/chat/${id}/archive`, { archived: newVal })));
+    } catch { fetchConversations(); }
+  };
+
+  // ── Suppression ───────────────────────────────────────────────────────────
   const deleteSelected = () => {
     Alert.alert(
       `Supprimer ${selectedIds.size} conversation${selectedIds.size > 1 ? 's' : ''}`,
@@ -278,18 +512,21 @@ export default function StudentChatScreen({ navigation }: Props) {
             const ids = [...selectedIds];
             clearSelection();
             setConversations(prev => prev.filter(c => !ids.includes(c.id)));
-            try { await Promise.all(ids.map(id => api.delete(`/chat/${id}`))); }
-            catch { fetchConversations(); }
+            try {
+              await Promise.all(ids.map(id => api.delete(`/chat/${id}`)));
+            } catch { fetchConversations(); }
           },
         },
       ]
     );
   };
 
-  // ── Navigation ──
+  // ── Navigation ────────────────────────────────────────────────────────────
   const openConversation = (conv: ConversationDTO) => {
     if (isSelecting) { toggleSelect(conv.id); return; }
-    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
+    setConversations(prev =>
+      prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c)
+    );
     navigation.navigate('StudentChatConversation', {
       conversationId: conv.id,
       title: getDisplayName(conv),
@@ -297,7 +534,7 @@ export default function StudentChatScreen({ navigation }: Props) {
     });
   };
 
-  // ── Professeurs ──
+  // ── Professeurs ───────────────────────────────────────────────────────────
   const openNewConversationPicker = async () => {
     setDrawerVisible(false);
     setPickerVisible(true);
@@ -305,8 +542,9 @@ export default function StudentChatScreen({ navigation }: Props) {
     try {
       const { data } = await api.get('/chat/professors');
       setProfessors(data.professors || []);
-    } catch { Alert.alert('Indisponible', 'Impossible de charger les professeurs.'); }
-    finally { setLoadingProfessors(false); }
+    } catch {
+      Alert.alert('Indisponible', 'Impossible de charger les professeurs.');
+    } finally { setLoadingProfessors(false); }
   };
 
   const startConversationWith = async (prof: Professor) => {
@@ -325,7 +563,24 @@ export default function StudentChatScreen({ navigation }: Props) {
     } finally { setStartingWith(null); }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Labels des filtres ────────────────────────────────────────────────────
+  const sectionMeta: Record<SidebarSection, { icon: string; label: string; color?: string; count?: number }> = {
+    conversations: { icon: 'chatbubbles',  label: 'Toutes',       count: conversations.filter(c => !c.isArchived).length },
+    nonlus:        { icon: 'mail-unread',  label: 'Non lus',      count: unreadCount, color: PRIMARY },
+    favoris:       { icon: 'star',         label: 'Favoris',      count: favCount,    color: WARN },
+    archives:      { icon: 'archive',      label: 'Archivés',     count: archiveCount },
+    signalements:  { icon: 'flag',         label: 'Signalements', count: reportCount, color: DANGER },
+  };
+
+  const emptyMessages: Record<SidebarSection, string> = {
+    conversations: 'Appuie sur le crayon pour contacter un professeur',
+    nonlus:        'Tous vos messages ont été lus 👍',
+    favoris:       'Glissez une conversation vers la gauche pour l\'ajouter en favori',
+    archives:      'Glissez une conversation vers la gauche pour l\'archiver',
+    signalements:  'Aucun profil signalé',
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
       <StatusBar barStyle="dark-content" backgroundColor={SURFACE} />
@@ -337,11 +592,27 @@ export default function StudentChatScreen({ navigation }: Props) {
             <TouchableOpacity onPress={clearSelection} style={s.headerBtn}>
               <Ionicons name="close" size={24} color={TEXT} />
             </TouchableOpacity>
-            <Text style={s.headerTitle}>{selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}</Text>
+            <Text style={s.headerTitle}>
+              {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+            </Text>
             <View style={s.headerRight}>
-              <TouchableOpacity style={s.headerBtn} onPress={archiveSelected}>
-                <Ionicons name="archive-outline" size={22} color={TEXT} />
+              {/* Favori toggle */}
+              <TouchableOpacity style={s.headerBtn} onPress={toggleFavoriteSelected}>
+                <Ionicons
+                  name={allSelectedFav ? 'star' : 'star-outline'}
+                  size={22}
+                  color={WARN}
+                />
               </TouchableOpacity>
+              {/* Archive / Désarchive toggle */}
+              <TouchableOpacity style={s.headerBtn} onPress={toggleArchiveSelected}>
+                <Ionicons
+                  name={allSelectedArchived ? 'arrow-undo-outline' : 'archive-outline'}
+                  size={22}
+                  color={TEXT}
+                />
+              </TouchableOpacity>
+              {/* Supprimer */}
               <TouchableOpacity style={s.headerBtn} onPress={deleteSelected}>
                 <Ionicons name="trash-outline" size={22} color={DANGER} />
               </TouchableOpacity>
@@ -367,25 +638,6 @@ export default function StudentChatScreen({ navigation }: Props) {
         )}
       </View>
 
-      {/* ── Filtre rapide non lus ── */}
-      {!isSelecting && (
-        <View style={s.filterChips}>
-          {(['conversations', 'nonlus', 'favoris'] as SidebarSection[]).map(sec => {
-            const labels: Record<string, string> = { conversations: 'Tous', nonlus: 'Non lus', favoris: 'Favoris' };
-            const active = activeSection === sec;
-            return (
-              <TouchableOpacity
-                key={sec}
-                style={[s.chip, active && s.chipActive]}
-                onPress={() => setActiveSection(sec)}
-              >
-                <Text style={[s.chipText, active && s.chipTextActive]}>{labels[sec]}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
       {/* ── Barre de recherche ── */}
       {!isSelecting && (
         <View style={s.searchRow}>
@@ -405,6 +657,16 @@ export default function StudentChatScreen({ navigation }: Props) {
         </View>
       )}
 
+      {/* ── Bandeau info section archives ── */}
+      {activeSection === 'archives' && !isSelecting && (
+        <View style={s.sectionBanner}>
+          <Ionicons name="information-circle-outline" size={16} color={TEXT_MUTED} />
+          <Text style={s.sectionBannerText}>
+            Glissez à gauche sur une conversation pour la désarchiver
+          </Text>
+        </View>
+      )}
+
       {/* ── Liste ── */}
       {loading ? (
         <View style={s.loadingContainer}>
@@ -414,60 +676,44 @@ export default function StudentChatScreen({ navigation }: Props) {
         <FlatList
           data={filtered}
           keyExtractor={item => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchConversations(); }} tintColor={PRIMARY} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchConversations(); }}
+              tintColor={PRIMARY}
+            />
+          }
           ListEmptyComponent={
             <View style={s.emptyState}>
               <View style={s.emptyIcon}>
-                <Ionicons name="chatbubbles-outline" size={40} color={TEXT_MUTED} />
+                <Ionicons
+                  name={sectionMeta[activeSection].icon as any}
+                  size={40}
+                  color={TEXT_MUTED}
+                />
               </View>
-              <Text style={s.emptyTitle}>{search ? 'Aucun résultat' : 'Aucune conversation'}</Text>
+              <Text style={s.emptyTitle}>
+                {search ? 'Aucun résultat' : `Aucune conversation`}
+              </Text>
               <Text style={s.emptyText}>
-                {search ? `Rien pour "${search}"` : 'Appuie sur le crayon pour contacter un professeur'}
+                {search ? `Rien pour "${search}"` : emptyMessages[activeSection]}
               </Text>
             </View>
           }
           renderItem={({ item }) => {
-            const lastMsg = getLastMessage(item);
-            const unread = item.unreadCount || 0;
             const isOnline = item.otherMember ? onlineUsers.has(item.otherMember.id) : false;
-            const isMine = lastMsg?.senderId === myId;
             const isSelected = selectedIds.has(item.id);
-
             return (
-              <TouchableOpacity
-                style={[s.convRow, isSelected && s.convRowSelected]}
+              <ConvRow
+                item={item}
+                myId={myId}
+                isOnline={isOnline}
+                isSelected={isSelected}
                 onPress={() => openConversation(item)}
                 onLongPress={() => toggleSelect(item.id)}
-                activeOpacity={0.6}
-              >
-                <Avatar member={item.otherMember} online={isOnline} selected={isSelected} />
-                <View style={s.convBody}>
-                  <View style={s.convTop}>
-                    <Text style={[s.convName, unread > 0 && s.convNameBold]} numberOfLines={1}>
-                      {getDisplayName(item)}
-                    </Text>
-                    <Text style={[s.convTime, unread > 0 && { color: PRIMARY }]}>
-                      {formatTime(lastMsg?.createdAt || item.createdAt)}
-                    </Text>
-                  </View>
-                  {item.otherMember?.matiere && (
-                    <Text style={s.convMatiere}>{item.otherMember.matiere}</Text>
-                  )}
-                  <View style={s.convBottom}>
-                    {isMine && lastMsg && (
-                      <Ionicons name="checkmark-done" size={14} color={PRIMARY} style={{ marginRight: 4 }} />
-                    )}
-                    <Text style={[s.convPreview, unread > 0 && s.convPreviewBold]} numberOfLines={1}>
-                      {getLastMessagePreview(lastMsg, isMine)}
-                    </Text>
-                    {unread > 0 && (
-                      <View style={s.unreadBadge}>
-                        <Text style={s.unreadText}>{unread > 99 ? '99+' : unread}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
+                onToggleFavorite={() => toggleFavorite(item.id)}
+                onToggleArchive={() => toggleArchive(item.id)}
+              />
             );
           }}
           ItemSeparatorComponent={() => <View style={s.separator} />}
@@ -497,25 +743,19 @@ export default function StudentChatScreen({ navigation }: Props) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {[
-              { key: 'conversations', icon: 'chatbubbles', label: 'Toutes les conversations', count: conversations.length },
-              { key: 'nonlus', icon: 'mail-unread', label: 'Non lus', count: unreadCount },
-              { key: 'favoris', icon: 'star', label: 'Favoris' },
-              { key: 'archives', icon: 'archive', label: 'Archivés' },
-              { key: 'signalements', icon: 'flag', label: 'Signalements' },
-            ].map(item => {
-              const active = activeSection === item.key as SidebarSection;
+            {(Object.entries(sectionMeta) as [SidebarSection, typeof sectionMeta[SidebarSection]][]).map(([key, meta]) => {
+              const active = activeSection === key;
               return (
                 <TouchableOpacity
-                  key={item.key}
+                  key={key}
                   style={[s.drawerItem, active && s.drawerItemActive]}
-                  onPress={() => { setActiveSection(item.key as SidebarSection); setDrawerVisible(false); }}
+                  onPress={() => { setActiveSection(key); setDrawerVisible(false); }}
                 >
-                  <Ionicons name={item.icon as any} size={20} color={active ? PRIMARY : TEXT_MUTED} />
-                  <Text style={[s.drawerItemLabel, active && { color: PRIMARY }]}>{item.label}</Text>
-                  {item.count !== undefined && item.count > 0 && (
-                    <View style={s.drawerBadge}>
-                      <Text style={s.drawerBadgeText}>{item.count > 99 ? '99+' : item.count}</Text>
+                  <Ionicons name={meta.icon as any} size={20} color={active ? PRIMARY : (meta.color || TEXT_MUTED)} />
+                  <Text style={[s.drawerItemLabel, active && { color: PRIMARY }]}>{meta.label}</Text>
+                  {meta.count !== undefined && meta.count > 0 && (
+                    <View style={[s.drawerBadge, meta.color ? { backgroundColor: meta.color } : {}]}>
+                      <Text style={s.drawerBadgeText}>{meta.count > 99 ? '99+' : meta.count}</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -589,14 +829,13 @@ export default function StudentChatScreen({ navigation }: Props) {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 54 : 40,
     paddingHorizontal: 16, paddingBottom: 12,
     backgroundColor: SURFACE,
   },
-  headerBrand: { flex: 1, fontSize: 22, fontWeight: '800', color: TEXT, letterSpacing: -0.3 },
+  headerBrand: { flex: 1, fontSize: 25, fontWeight: '800', color: PRIMARY, letterSpacing: -0.3 },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '600', color: TEXT },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerBtn: { padding: 8 },
@@ -608,26 +847,10 @@ const s = StyleSheet.create({
   headerBadgeText: { fontSize: 11, fontWeight: '700', color: '#FFF' },
   newBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center',
-    marginLeft: 4,
+    backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', marginLeft: 4,
   },
 
-  // Chips filtre
-  filterChips: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: SURFACE,
-    borderBottomWidth: 1, borderBottomColor: BORDER,
-  },
-  chip: {
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, backgroundColor: SURFACE2,
-  },
-  chipActive: { backgroundColor: PRIMARY },
-  chipText: { fontSize: 13, fontWeight: '600', color: TEXT_MUTED },
-  chipTextActive: { color: '#FFF' },
 
-  // Recherche
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
     margin: 12, paddingHorizontal: 14, paddingVertical: 10,
@@ -635,9 +858,25 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: TEXT },
 
+  sectionBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#F8F9FA', borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  sectionBannerText: { fontSize: 12, color: TEXT_MUTED, flex: 1 },
+
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Conversations
+  // Swipe actions
+  swipeActions: {
+    position: 'absolute', right: 0, top: 0, bottom: 0,
+    flexDirection: 'row', width: 120,
+  },
+  swipeAction: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  swipeActionText: { color: '#FFF', fontSize: 11, fontWeight: '600' },
+
   convRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
@@ -645,8 +884,9 @@ const s = StyleSheet.create({
   },
   convRowSelected: { backgroundColor: SELECTED_BG },
   convBody: { flex: 1, marginLeft: 12 },
-  convTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
-  convName: { flex: 1, fontSize: 16, fontWeight: '500', color: TEXT, marginRight: 8 },
+  convTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  convNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 8 },
+  convName: { flex: 1, fontSize: 16, fontWeight: '500', color: TEXT },
   convNameBold: { fontWeight: '700' },
   convTime: { fontSize: 12, color: TEXT_MUTED },
   convMatiere: { fontSize: 12, color: PRIMARY, fontWeight: '600', marginBottom: 2 },
@@ -661,21 +901,18 @@ const s = StyleSheet.create({
   unreadText: { fontSize: 11, fontWeight: '700', color: '#FFF' },
   separator: { height: 1, backgroundColor: BORDER, marginLeft: 78 },
 
-  // Empty
   emptyState: { alignItems: 'center', paddingTop: 80, gap: 12 },
   emptyIcon: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: SURFACE,
+    width: 80, height: 80, borderRadius: 40, backgroundColor: SURFACE2,
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT },
   emptyText: { fontSize: 14, color: TEXT_MUTED, textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
 
-  // Drawer
   drawer: { flex: 1, backgroundColor: BG, paddingTop: Platform.OS === 'ios' ? 54 : 40 },
   drawerHeader: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingBottom: 12,
-    backgroundColor: SURFACE,
+    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: SURFACE,
   },
   drawerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: TEXT, marginLeft: 8 },
   drawerSecurity: {
@@ -691,7 +928,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 16,
     borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  drawerItemActive: { backgroundColor: SURFACE },
+  drawerItemActive: { backgroundColor: PRIMARY_LIGHT },
   drawerItemLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: TEXT },
   drawerBadge: {
     backgroundColor: UNREAD_BG, borderRadius: 10,
@@ -700,15 +937,20 @@ const s = StyleSheet.create({
   },
   drawerBadgeText: { fontSize: 11, fontWeight: '700', color: '#FFF' },
 
-  // Modal prof
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: SURFACE, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingTop: 12, paddingHorizontal: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    maxHeight: '80%',
+    paddingTop: 12, paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16, maxHeight: '80%',
   },
-  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: SURFACE2, alignSelf: 'center', marginBottom: 16 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: SURFACE2,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 4,
+  },
   modalTitle: { fontSize: 18, fontWeight: '700', color: TEXT },
   modalSub: { fontSize: 13, color: TEXT_MUTED, marginBottom: 12 },
   profRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },

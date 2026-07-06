@@ -1,1133 +1,718 @@
-// screens/student/StudentCoursesScreen.tsx
-// Page Cours étudiant — pixel-perfect selon le design fourni
-// Vue 1 : onglets matières  →  Vue 2 : chapitres + leçons + quiz + notes
-// Tout connecté au backend via l'instance `api` (auth.service.ts)
-//
-// Endpoints utilisés :
-//   GET /courses                        → liste des matières / cours
-//   GET /courses/:courseId/chapters     → chapitres d'une matière
-//   GET /chapters/:chapterId/lessons    → leçons d'un chapitre
-//   GET /lessons/my-progress            → progression de l'étudiant
-//   GET /quiz?chapterId=:id             → quiz de fin de chapitre
-//   GET /notes?chapterId=:id            → notes personnelles
-//   POST /notes                         → créer une note
-//   PATCH /notes/:id                    → modifier une note
+// StudentCoursesScreen.tsx
+// Navigation interne : home → chapters → detail
+// Le back depuis Leçon/Quiz/Exercices utilise navigation.goBack() du Navigator (stack)
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-  ActivityIndicator,
-  TextInput,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  DimensionValue,
+  ActivityIndicator, Alert, Animated, Platform, RefreshControl,
+  ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/auth.service';
 
-// ─── COULEURS ──────────────────────────────────────────────────────────────────
-const COLORS = {
-  primary: '#0D6B5E',
-  primaryLight: '#E1F5EE',
-  primaryDark: '#0A5449',
-  gold: '#D4A017',
-  goldLight: '#FFF8E7',
-  white: '#FFFFFF',
-  background: '#FFFFFF',
-  card: '#FFFFFF',
-  textPrimary: '#111827',
-  textSecondary: '#6B7280',
-  textMuted: '#9CA3AF',
-  border: '#E5E7EB',
-  success: '#0D6B5E',
-  danger: '#EF4444',
-  progressBg: '#E5E7EB',
-};
+const PRIMARY       = '#0D6B5E';
+const PRIMARY_LIGHT = '#E6F3F1';
+const BG            = '#FFFFFF';
+const CARD          = '#FFFFFF';
+const TEXT          = '#111827';
+const TEXT_MUTED    = '#6B7280';
+const BORDER        = '#E5E7EB';
+const SUCCESS       = '#16A34A';
+const SUCCESS_LIGHT = '#DCFCE7';
+const GOLD          = '#D4A017';
 
-// ─── TYPES ─────────────────────────────────────────────────────────────────────
-interface Course {
-  id: string;
-  titre: string;
-  description?: string;
-  matiere?: string;
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Subject {
+  id: string; nom?: string; titre?: string; icon?: string; couleur?: string;
+  progressPercent?: number; totalChapters?: number;
 }
-
+interface GlobalStats {
+  totalSubjects: number; totalChapters: number; totalLessons: number; globalPercent: number;
+  lastChapter?: { id: string; titre: string; subjectTitre: string; completedLessons: number; totalLessons: number; };
+}
+type ChapterStatus = 'available' | 'in_progress' | 'completed';
 interface Chapter {
-  id: string;
-  courseId: string;
-  titre: string;
-  numero: number;
-  description?: string;
-  progression?: number; // % calculé côté client
+  id: string; subjectId: string; titre: string; ordre: number; description?: string;
+  status: ChapterStatus; progressPercent: number; totalLessons: number; completedLessons: number;
 }
-
-type LessonStatus = 'completed' | 'in_progress' | 'locked' | 'available';
-
+type LessonStatus = 'completed' | 'in_progress' | 'available' | 'locked';
 interface Lesson {
-  id: string;
-  chapterId: string;
-  titre: string;
-  numero: number;
-  type?: 'video' | 'text' | 'exercise';
-  status: LessonStatus;
-  sousTitre: string; // dérivé du status
+  id: string; chapterId: string; titre: string; ordre: number;
+  type?: string; isFree?: boolean; status: LessonStatus; duree?: number;
 }
-
-interface ChapterQuiz {
-  id: string;
-  titre: string;
-  nombreQuestions?: number;
-  xpRecompense?: number;
-}
-
-interface Note {
-  id: string;
-  contenu: string;
-  chapterId?: string;
-  createdAt?: string;
-}
-
+interface ChapterQuiz { id: string; titre: string; nombreQuestions?: number; xpRecompense?: number; }
 interface ChapterDetail {
-  chapter: Chapter;
-  lessons: Lesson[];
-  quiz: ChapterQuiz | null;
-  note: Note | null;
-  progressionPourcent: number;
+  lessons: Lesson[]; quiz: ChapterQuiz | null; progressPercent: number;
+  quizPassed?: boolean; exercisesExist?: boolean; exercisesPassed?: boolean;
 }
+type Screen = 'home' | 'chapters' | 'detail';
+interface NavigationProp { navigate: (s: string, p?: any) => void; goBack?: () => void; }
+interface Props { navigation: NavigationProp; }
 
-interface NavigationProp {
-  navigate: (screen: string, params?: Record<string, any>) => void;
-  goBack?: () => void;
-  replace?: (screen: string) => void;
-}
-
-interface Props {
-  navigation: NavigationProp;
-  onLogout?: () => void;
-}
-
-// ─── HELPERS ───────────────────────────────────────────────────────────────────
-function getErrorMessage(err: unknown): string {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const e = err as { response?: { status?: number; data?: { message?: string } } };
-    if (e.response?.status === 401) return 'Session expirée';
-    if (e.response?.data?.message) return e.response.data.message;
+function subjectLabel(s: Subject) { return s.nom ?? s.titre ?? '—'; }
+function errMsg(e: unknown): string {
+  if (typeof e === 'object' && e !== null && 'response' in e) {
+    const r = (e as any).response?.data?.message; if (r) return r;
   }
-  if (err instanceof Error) return err.message;
-  return 'Une erreur est survenue';
+  return e instanceof Error ? e.message : 'Erreur';
 }
 
-// Dérive le statut d'affichage d'une leçon depuis les données de progression
-function deriveLessonStatus(
-  lessonId: string,
-  progressMap: Record<string, { completed: boolean; inProgress: boolean }>
-): LessonStatus {
-  const p = progressMap[lessonId];
-  if (!p) return 'available';
-  if (p.completed) return 'completed';
-  if (p.inProgress) return 'in_progress';
-  return 'available';
+// ─── ProgressBar ─────────────────────────────────────────────────────────────
+function ProgressBar({ value, color }: { value: number; color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: value, duration: 700, useNativeDriver: false }).start();
+  }, [value]);
+  const width = anim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
+  return (
+    <View style={{ height: 6, backgroundColor: BORDER, borderRadius: 3, overflow: 'hidden', marginTop: 8 }}>
+      <Animated.View style={{ height: 6, borderRadius: 3, width, backgroundColor: color }} />
+    </View>
+  );
 }
 
-function lessonSousTitre(status: LessonStatus, type?: string): string {
-  if (status === 'completed') return type === 'video' ? 'Vidéo terminée' : 'Terminée';
-  if (status === 'in_progress') return 'En cours';
-  if (status === 'locked') return 'Verrouillée';
-  return type === 'video' ? 'Vidéo disponible' : 'Disponible';
+// ─── API ─────────────────────────────────────────────────────────────────────
+async function fetchHomeData(): Promise<{ subjects: Subject[]; stats: GlobalStats }> {
+  const subjRes = await api.get('/courses/subjects');
+  const subjects: Subject[] = subjRes.data?.subjects ?? subjRes.data ?? [];
+
+  const subjectsWithProgress: Subject[] = await Promise.all(
+    subjects.map(async (subj) => {
+      try {
+        const chapRes = await api.get(`/courses/subjects/${subj.id}/chapters`);
+        const chapters: any[] = chapRes.data?.chapters ?? chapRes.data ?? [];
+        if (chapters.length === 0) return { ...subj, progressPercent: 0, totalChapters: 0 };
+
+        const progRes = await api.get('/courses/progress/me').catch(() => ({ data: { progress: [] } }));
+        const rawProg = progRes.data;
+        const progList: any[] = rawProg?.progress ?? rawProg?.data ?? (Array.isArray(rawProg) ? rawProg : []);
+        const progMap: Record<string, boolean> = {};
+        for (const p of progList) {
+          const lessonId = p.lessonId ?? p.lesson_id ?? p.LessonId;
+          if (lessonId) progMap[lessonId] = Boolean(p.isCompleted ?? p.is_completed ?? p.completed ?? false);
+        }
+
+        const chapterProgresses: number[] = await Promise.all(
+          chapters.map(async (ch: any) => {
+            try {
+              const lessRes = await api.get(`/courses/chapters/${ch.id}/lessons`);
+              const lessons: any[] = lessRes.data?.lessons ?? lessRes.data ?? [];
+              if (lessons.length === 0) return 0;
+              const done = lessons.filter((l: any) => progMap[l.id] === true).length;
+              return Math.round((done / lessons.length) * 100);
+            } catch { return 0; }
+          })
+        );
+
+        const subjPct = chapterProgresses.length > 0
+          ? Math.round(chapterProgresses.reduce((a, b) => a + b, 0) / chapterProgresses.length) : 0;
+        return { ...subj, progressPercent: subjPct, totalChapters: chapters.length };
+      } catch { return { ...subj, progressPercent: 0, totalChapters: 0 }; }
+    })
+  );
+
+  const subjectsWithChapters = subjectsWithProgress.filter(s => (s as any).totalChapters > 0);
+  const globalPercent = subjectsWithChapters.length > 0
+    ? Math.round(subjectsWithChapters.reduce((acc, s) => acc + (s.progressPercent ?? 0), 0) / subjectsWithChapters.length)
+    : 0;
+
+  return {
+    subjects: subjectsWithProgress,
+    stats: {
+      totalSubjects: subjects.length,
+      totalChapters: subjectsWithProgress.reduce((s, subj) => s + ((subj as any).totalChapters ?? 0), 0),
+      totalLessons: 0,
+      globalPercent,
+    },
+  };
 }
 
-// ─── API ───────────────────────────────────────────────────────────────────────
-async function fetchCourses(): Promise<Course[]> {
-  // Endpoint réel : GET /course/subjects
-  const res = await api.get('/courses/subjects');
-  return res.data?.subjects ?? res.data ?? [];
-}
+async function fetchChapters(subjectId: string): Promise<Chapter[]> {
+  const [chapRes, progRes] = await Promise.all([
+    api.get(`/courses/subjects/${subjectId}/chapters`),
+    api.get('/courses/progress/me').catch(() => ({ data: { progress: [] } })),
+  ]);
+  const raw: any[] = chapRes.data?.chapters ?? chapRes.data ?? [];
+  const rawProg = progRes.data;
+  const progList: any[] = rawProg?.progress ?? rawProg?.data ?? (Array.isArray(rawProg) ? rawProg : []);
+  const progMap: Record<string, boolean> = {};
+  for (const p of progList) {
+    const lessonId = p.lessonId ?? p.lesson_id ?? p.LessonId;
+    if (lessonId) progMap[lessonId] = Boolean(p.isCompleted ?? p.is_completed ?? p.completed ?? false);
+  }
 
-async function fetchChapters(courseId: string): Promise<Chapter[]> {
-  // Endpoint réel : GET /course/subjects/:subjectId/chapters
-  const res = await api.get(`/courses/subjects/${courseId}/chapters`);
-  const chapters: any[] = res.data?.chapters ?? res.data ?? [];
-  return chapters
-    .sort((a, b) => (a.numero ?? a.order ?? 0) - (b.numero ?? b.order ?? 0))
-    .map((c) => ({ ...c, progression: 0 }));
+  return Promise.all(
+    raw.sort((a, b) => (a.ordre ?? a.order ?? 0) - (b.ordre ?? b.order ?? 0))
+      .map(async (ch, i) => {
+        try {
+          const r = await api.get(`/courses/chapters/${ch.id}/lessons`);
+          const lessons: any[] = r.data?.lessons ?? r.data ?? [];
+          const total = lessons.length;
+          const done = lessons.filter((l: any) => progMap[l.id] === true).length;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          return {
+            id: ch.id, subjectId: ch.subjectId ?? subjectId, titre: ch.titre,
+            ordre: ch.ordre ?? ch.order ?? i + 1, description: ch.description,
+            status: (pct === 100 ? 'completed' : pct > 0 ? 'in_progress' : 'available') as ChapterStatus,
+            progressPercent: pct, totalLessons: total, completedLessons: done,
+          } as Chapter;
+        } catch {
+          return {
+            id: ch.id, subjectId: ch.subjectId ?? subjectId, titre: ch.titre,
+            ordre: ch.ordre ?? ch.order ?? i + 1, status: 'available' as ChapterStatus,
+            progressPercent: 0, totalLessons: 0, completedLessons: 0,
+          } as Chapter;
+        }
+      })
+  );
 }
 
 async function fetchChapterDetail(chapterId: string): Promise<ChapterDetail> {
-  // Endpoints réels confirmés :
-  //   GET /course/chapters/:chapterId/lessons
-  //   GET /course/progress/me
-  //   GET /quiz/chapter/:chapterId
-  const [lessonsRes, progressRes, quizRes] = await Promise.all([
+  const [lessRes, progRes, quizRes, exerciseRes] = await Promise.all([
     api.get(`/courses/chapters/${chapterId}/lessons`),
     api.get('/courses/progress/me').catch(() => ({ data: { progress: [] } })),
     api.get(`/quiz/chapter/${chapterId}`).catch(() => ({ data: null })),
+    api.get(`/courses/chapters/${chapterId}/exercises`).catch(() => ({ data: null })),
   ]);
 
-  // Leçons brutes
-  const rawLessons: any[] = lessonsRes.data?.lessons ?? lessonsRes.data ?? [];
-
-  // Map de progression par lessonId
-  const progressList: any[] = progressRes.data?.progress ?? progressRes.data ?? [];
-  const progressMap: Record<string, { completed: boolean; inProgress: boolean }> = {};
-  for (const p of progressList) {
-    if (p.lessonId) {
-      progressMap[p.lessonId] = {
-        completed: p.completed ?? p.statut === 'completed',
-        inProgress: p.inProgress ?? p.statut === 'in_progress',
-      };
-    }
+  const rawLessons: any[] = lessRes.data?.lessons ?? lessRes.data ?? [];
+  const progList: any[] = progRes.data?.progress ?? [];
+  const progMap: Record<string, { completed: boolean; inProgress: boolean }> = {};
+  for (const p of progList) {
+    const lessonId = p.lessonId ?? p.lesson_id;
+    if (lessonId) progMap[lessonId] = {
+      completed: p.isCompleted ?? false,
+      inProgress: !!(p.watchedSeconds > 0 && !p.isCompleted),
+    };
   }
 
-  // Construit les leçons enrichies
-  const lessons: Lesson[] = rawLessons
-    .sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0))
-    .map((l, index) => {
-      // Verrouillage séquentiel : une leçon est accessible si la précédente est terminée
-      let status: LessonStatus = deriveLessonStatus(l.id, progressMap);
-      if (status === 'available' && index > 0) {
-        const prevLesson = rawLessons.sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0))[index - 1];
-        const prevCompleted = progressMap[prevLesson?.id]?.completed ?? false;
-        if (!prevCompleted && !progressMap[l.id]?.inProgress) {
-          status = 'locked';
-        }
-      }
-      return {
-        id: l.id,
-        chapterId: l.chapterId ?? chapterId,
-        titre: l.titre ?? `Leçon ${index + 1}`,
-        numero: l.numero ?? index + 1,
-        type: l.type,
-        status,
-        sousTitre: lessonSousTitre(status, l.type),
-      };
-    });
+  const qd = quizRes.data;
+  const qr = qd?.quiz ?? (Array.isArray(qd?.quizzes) ? qd.quizzes[0] : null) ?? (qd?.id ? qd : null);
+  const quiz: ChapterQuiz | null = qr?.id ? {
+    id: qr.id, titre: qr.titre ?? 'Quiz du chapitre',
+    nombreQuestions: qr.nombreQuestions ?? qr.questions?.length, xpRecompense: qr.xpRecompense ?? 40,
+  } : null;
 
-  // Progression du chapitre
-  const completed = lessons.filter((l) => l.status === 'completed').length;
-  const progressionPourcent =
-    lessons.length > 0 ? Math.round((completed / lessons.length) * 100) : 0;
+  const quizPassed: boolean = qd?.myResult?.passed ?? qd?.passed ?? false;
+  const exercisesExist = !!(exerciseRes.data?.exercises?.length > 0 || exerciseRes.data?.length > 0);
+  const exercisesPassed = exerciseRes.data?.myResult?.passed ?? false;
 
-  // Quiz de fin de chapitre
-  // GET /quiz/chapter/:chapterId peut retourner { quiz: {...} } ou { quizzes: [...] } ou directement l'objet
-  const quizData = quizRes.data;
-  const quizRaw = quizData?.quiz ?? (Array.isArray(quizData?.quizzes) ? quizData.quizzes[0] : null) ?? (quizData?.id ? quizData : null);
-  const quiz: ChapterQuiz | null = quizRaw?.id
-    ? {
-        id: quizRaw.id,
-        titre: quizRaw.titre ?? 'Quiz de fin de chapitre',
-        nombreQuestions: quizRaw.nombreQuestions ?? quizRaw.questions?.length,
-        xpRecompense: quizRaw.xpRecompense ?? 40,
-      }
-    : null;
+  const sorted = [...rawLessons].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0));
 
-  // Pas d'endpoint notes → null (section notes affichée mais sans données préchargées)
-  const note: Note | null = null;
-
-  // Infos du chapitre lui-même
-  const chapter: Chapter = {
-    id: chapterId,
-    courseId: '',
-    titre: lessons[0]?.chapterId ? '' : '', // sera enrichi depuis le parent
-    numero: 0,
-    progression: progressionPourcent,
+  const isLessonFullyDone = (lessonId: string, isLast: boolean): boolean => {
+    if (!progMap[lessonId]?.completed) return false;
+    if (!isLast) return true;
+    if (quiz && !quizPassed) return false;
+    if (exercisesExist && !exercisesPassed) return false;
+    return true;
   };
 
-  return { chapter, lessons, quiz, note, progressionPourcent };
-}
-
-// ─── COMPOSANTS ────────────────────────────────────────────────────────────────
-
-// Icône de statut de leçon (gauche)
-const LessonStatusIcon = ({ status }: { status: LessonStatus }) => {
-  if (status === 'completed') {
-    return (
-      <View style={[styles.lessonIconCircle, styles.lessonIconCompleted]}>
-        <Ionicons name="checkmark" size={14} color={COLORS.white} />
-      </View>
-    );
-  }
-  if (status === 'in_progress' || status === 'available') {
-    return (
-      <View style={[styles.lessonIconCircle, styles.lessonIconAvailable]}>
-        <Ionicons name="play" size={12} color={COLORS.textSecondary} />
-      </View>
-    );
-  }
-  // locked
-  return (
-    <View style={[styles.lessonIconCircle, styles.lessonIconLocked]}>
-      <Ionicons name="play" size={12} color={COLORS.textMuted} />
-    </View>
-  );
-};
-
-// Icône de statut côté droit
-const LessonRightIcon = ({ status }: { status: LessonStatus }) => {
-  if (status === 'completed') {
-    return (
-      <View style={[styles.lessonRightIcon, styles.lessonIconCompleted]}>
-        <Ionicons name="checkmark" size={14} color={COLORS.white} />
-      </View>
-    );
-  }
-  if (status === 'in_progress') {
-    return <Ionicons name="leaf" size={20} color={COLORS.primary} />;
-  }
-  if (status === 'locked') {
-    return <Ionicons name="lock-closed" size={18} color={COLORS.textMuted} />;
-  }
-  return null;
-};
-
-// ─── VUE DÉTAIL CHAPITRE ───────────────────────────────────────────────────────
-interface ChapterViewProps {
-  chapter: Chapter;
-  detail: ChapterDetail;
-  onBack: () => void;
-  onLessonPress: (lesson: Lesson) => void;
-  onQuizPress: (quiz: ChapterQuiz) => void;
-  onNoteSave: (contenu: string, noteId?: string) => Promise<void>;
-  courseTitre: string;
-}
-
-const ChapterView = ({
-  chapter,
-  detail,
-  onBack,
-  onLessonPress,
-  onQuizPress,
-  onNoteSave,
-  courseTitre,
-}: ChapterViewProps) => {
-  const [noteText, setNoteText] = useState(detail.note?.contenu ?? '');
-  const [savingNote, setSavingNote] = useState(false);
-
-  const handleSaveNote = async () => {
-    if (!noteText.trim()) return;
-    setSavingNote(true);
-    try {
-      await onNoteSave(noteText.trim(), detail.note?.id);
-    } finally {
-      setSavingNote(false);
+  const lessons: Lesson[] = sorted.map((l, i) => {
+    const pg = progMap[l.id];
+    let status: LessonStatus = 'available';
+    if (pg?.completed) status = 'completed';
+    else if (pg?.inProgress) status = 'in_progress';
+    if (i > 0 && status !== 'completed') {
+      const prev = sorted[i - 1];
+      if (!isLessonFullyDone(prev.id, i - 1 === sorted.length - 1)) status = 'locked';
     }
-  };
+    return {
+      id: l.id, chapterId: l.chapterId ?? chapterId,
+      titre: l.titre ?? `Leçon ${i + 1}`, ordre: l.ordre ?? i + 1,
+      type: (l.type ?? 'text').toLowerCase(), isFree: l.isFree, status, duree: l.duree,
+    };
+  });
 
-  const progressWidth: DimensionValue = `${detail.progressionPourcent}%` as DimensionValue;
+  const done = lessons.filter(l => l.status === 'completed').length;
+  const pct = lessons.length > 0 ? Math.round((done / lessons.length) * 100) : 0;
+  return { lessons, quiz, progressPercent: pct, quizPassed, exercisesExist, exercisesPassed };
+}
 
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={styles.chapterScroll}
-        contentContainerStyle={styles.chapterScrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ── Bannière chapitre (fond vert foncé) ── */}
-        <View style={styles.chapterBanner}>
-          <View style={styles.chapterBannerLeft}>
-            <Text style={styles.chapterBannerSub}>Chapitre {chapter.numero}</Text>
-            <Text style={styles.chapterBannerTitle}>
-              {chapter.titre.toUpperCase()}
-            </Text>
-            <Text style={styles.chapterBannerLabel}>Progression du chapitre</Text>
-            {/* Barre de progression */}
-            <View style={styles.chapterProgressBg}>
-              <View style={[styles.chapterProgressFill, { width: progressWidth }]} />
-            </View>
-          </View>
-          {/* Déco mathématique droite */}
-          <View style={styles.chapterBannerDeco}>
-            <Text style={styles.chapterDecoText}>{'x²y = 4'}</Text>
-            <Text style={styles.chapterDecoText}>{'2x - 3 = 7'}</Text>
-          </View>
-          {/* % en bas à droite */}
-          <Text style={styles.chapterProgressPct}>{detail.progressionPourcent}%</Text>
-        </View>
+// ─── SUBJECT COLORS ──────────────────────────────────────────────────────────
+const SUBJECT_COLORS = [
+  { color: PRIMARY,   bg: PRIMARY_LIGHT, icon: 'calculator'   },
+  { color: '#3B82F6', bg: '#EFF6FF',     icon: 'flask'        },
+  { color: '#7C3AED', bg: '#F5F3FF',     icon: 'leaf'         },
+  { color: '#F59E0B', bg: '#FFFBEB',     icon: 'language'     },
+  { color: '#EC4899', bg: '#FDF2F8',     icon: 'globe'        },
+];
 
-        {/* ── Liste des leçons ── */}
-        <View style={styles.lessonsCard}>
-          {detail.lessons.map((lesson, index) => (
-            <React.Fragment key={lesson.id}>
-              <TouchableOpacity
-                style={[
-                  styles.lessonRow,
-                  lesson.status === 'locked' && styles.lessonRowLocked,
-                ]}
-                onPress={() => lesson.status !== 'locked' && onLessonPress(lesson)}
-                activeOpacity={lesson.status === 'locked' ? 1 : 0.7}
-              >
-                <LessonStatusIcon status={lesson.status} />
-                <View style={styles.lessonText}>
-                  <Text
-                    style={[
-                      styles.lessonTitle,
-                      lesson.status === 'locked' && styles.lessonTitleLocked,
-                    ]}
-                  >
-                    {lesson.titre}
-                  </Text>
-                  <Text style={styles.lessonSub}>{lesson.sousTitre}</Text>
-                </View>
-                <LessonRightIcon status={lesson.status} />
-              </TouchableOpacity>
-              {index < detail.lessons.length - 1 && (
-                <View style={styles.lessonDivider} />
-              )}
-            </React.Fragment>
-          ))}
-        </View>
-
-        {/* ── Quiz de fin de chapitre ── */}
-        {detail.quiz && (
-          <TouchableOpacity
-            style={styles.quizRow}
-            onPress={() => onQuizPress(detail.quiz!)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.quizIconWrap}>
-              <Ionicons name="grid" size={20} color={COLORS.white} />
-            </View>
-            <View style={styles.quizText}>
-              <Text style={styles.quizTitle}>{detail.quiz.titre}</Text>
-              <Text style={styles.quizSub}>
-                {detail.quiz.nombreQuestions
-                  ? `${detail.quiz.nombreQuestions} questions`
-                  : '5-10 questions'}
-              </Text>
-            </View>
-            <Text style={styles.quizXP}>+{detail.quiz.xpRecompense ?? 40} XP</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Notes personnelles ── */}
-        <View style={styles.notesCard}>
-          <View style={styles.notesHeader}>
-            <View style={styles.notesIconWrap}>
-              <Ionicons name="document-text-outline" size={20} color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.notesTitle}>Notes personnelles</Text>
-              <TextInput
-                style={styles.notesInput}
-                value={noteText}
-                onChangeText={setNoteText}
-                placeholder="Ajouter une note…"
-                placeholderTextColor={COLORS.textMuted}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
-            </View>
-          </View>
-          {noteText.trim().length > 0 && (
-            <TouchableOpacity
-              style={styles.notesSaveBtn}
-              onPress={handleSaveNote}
-              disabled={savingNote}
-              activeOpacity={0.85}
-            >
-              {savingNote ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Text style={styles.notesSaveBtnText}>Enregistrer</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={{ height: 32 }} />
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
+const LESSON_TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
+  video:    { icon: 'play-circle-outline',   label: 'Vidéo',    color: '#EF4444' },
+  pdf:      { icon: 'document-text-outline', label: 'PDF',      color: GOLD      },
+  exercise: { icon: 'pencil-outline',        label: 'Exercice', color: '#7C3AED' },
+  text:     { icon: 'reader-outline',        label: 'Cours',    color: PRIMARY   },
 };
 
-// ─── ÉCRAN PRINCIPAL ───────────────────────────────────────────────────────────
+// ─── ÉCRAN PRINCIPAL ─────────────────────────────────────────────────────────
 export default function StudentCoursesScreen({ navigation }: Props) {
-  // ── État matières ──
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loadingCourses, setLoadingCourses] = useState(true);
-  const [errorCourses, setErrorCourses] = useState<string | null>(null);
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-
-  // ── État chapitres ──
-  const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [loadingChapters, setLoadingChapters] = useState(false);
-
-  // ── État détail chapitre ──
+  // Navigation interne gérée ici — le Navigator gère le back depuis Leçon/Quiz
+  const [screen, setScreen]               = useState<Screen>('home');
+  const [subjects, setSubjects]           = useState<Subject[]>([]);
+  const [stats, setStats]                 = useState<GlobalStats>({ totalSubjects: 0, totalChapters: 0, totalLessons: 0, globalPercent: 0 });
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [chapters, setChapters]           = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [chapterDetail, setChapterDetail] = useState<ChapterDetail | null>(null);
+  const [loading, setLoading]             = useState(true);
+  const [loadingChapters, setLoadingChapters] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [refreshing, setRefreshing]       = useState(false);
 
-  // ── Recherche ──
-  const [searchVisible, setSearchVisible] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(16)).current;
 
-  // ── Chargement initial des matières ──
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoadingCourses(true);
-        const data = await fetchCourses();
-        setCourses(data);
-        if (data.length > 0) setSelectedCourseId(data[0].id);
-      } catch (err) {
-        setErrorCourses(getErrorMessage(err));
-      } finally {
-        setLoadingCourses(false);
-      }
-    })();
+  const loadHome = useCallback(async () => {
+    try {
+      const { subjects: s, stats: st } = await fetchHomeData();
+      setSubjects(s); setStats(st);
+    } catch (e) { Alert.alert('Erreur', errMsg(e)); }
+    finally {
+      setLoading(false); setRefreshing(false);
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
+      ]).start();
+    }
   }, []);
 
-  // ── Chargement des chapitres quand on change de matière ──
-  useEffect(() => {
-    if (!selectedCourseId) return;
-    setSelectedChapter(null);
-    setChapterDetail(null);
-    setChapters([]);
-    (async () => {
-      try {
-        setLoadingChapters(true);
-        const data = await fetchChapters(selectedCourseId);
-        setChapters(data);
-      } catch (err) {
-        Alert.alert('Erreur', getErrorMessage(err));
-      } finally {
-        setLoadingChapters(false);
-      }
-    })();
-  }, [selectedCourseId]);
+  useEffect(() => { loadHome(); }, []);
 
-  // ── Ouverture d'un chapitre ──
+  // Clique sur une matière → navigation interne vers chapitres
+  const handleSubjectPress = useCallback(async (subject: Subject) => {
+    setSelectedSubject(subject);
+    setScreen('chapters');
+    setLoadingChapters(true);
+    try { setChapters(await fetchChapters(subject.id)); }
+    catch (e) { Alert.alert('Erreur', errMsg(e)); }
+    finally { setLoadingChapters(false); }
+  }, []);
+
+  // Clique sur un chapitre → navigation interne vers détail
   const handleChapterPress = useCallback(async (chapter: Chapter) => {
     setSelectedChapter(chapter);
-    setChapterDetail(null);
+    setScreen('detail');
     setLoadingDetail(true);
-    try {
-      const detail = await fetchChapterDetail(chapter.id);
-      // Enrichit le chapitre avec le titre si manquant
-      detail.chapter = { ...chapter, progression: detail.progressionPourcent };
-      setChapterDetail(detail);
-    } catch (err) {
-      Alert.alert('Erreur', getErrorMessage(err));
-      setSelectedChapter(null);
-    } finally {
-      setLoadingDetail(false);
-    }
+    try { setChapterDetail(await fetchChapterDetail(chapter.id)); }
+    catch (e) { Alert.alert('Erreur', errMsg(e)); }
+    finally { setLoadingDetail(false); }
   }, []);
 
-  // ── Navigation vers une leçon ──
+  // Clique sur une leçon → Navigator stack (back revient ici)
   const handleLessonPress = (lesson: Lesson) => {
     navigation.navigate('StudentLesson', {
-      lessonId: lesson.id,
-      lessonTitre: lesson.titre,
+      lessonId: lesson.id, lessonTitre: lesson.titre,
       chapterId: selectedChapter?.id,
+      subjectName: selectedSubject ? subjectLabel(selectedSubject) : undefined,
     });
   };
 
-  // ── Navigation vers le quiz ──
+  // Clique sur quiz → Navigator stack
   const handleQuizPress = (quiz: ChapterQuiz) => {
-    navigation.navigate('Quiz', {
-      quizId: quiz.id,
-      quizTitre: quiz.titre,
+    navigation.navigate('StudentCourseQuiz', {
+      quizId: quiz.id, quizTitre: quiz.titre,
+      chapterId: selectedChapter?.id, chapterTitre: selectedChapter?.titre,
     });
   };
 
-  // ── Sauvegarde de note ──
-  // Pas d'endpoint /notes dans le backend actuel → sauvegarde locale uniquement
-  // (À remplacer quand un endpoint notes sera ajouté au backend)
-  const handleNoteSave = async (contenu: string, _noteId?: string) => {
-    try {
-      // Tentative via le backend si un endpoint /notes existe plus tard
-      // await api.post('/notes', { contenu, chapterId: selectedChapter?.id });
-      Alert.alert('✅', 'Note enregistrée localement');
-    } catch (err) {
-      Alert.alert('Erreur', getErrorMessage(err));
-    }
-  };
-
-  // ── Retour depuis un chapitre ──
+  // Back interne (bouton ← dans l'écran)
   const handleBack = () => {
-    setSelectedChapter(null);
-    setChapterDetail(null);
+    if (screen === 'detail') { setScreen('chapters'); setChapterDetail(null); }
+    else if (screen === 'chapters') { setScreen('home'); setSelectedSubject(null); }
   };
 
-  // ── Chapitres filtrés par recherche ──
-  const filteredChapters = searchQuery.trim()
-    ? chapters.filter((c) =>
-        c.titre.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : chapters;
+  if (loading) return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG }}>
+      <ActivityIndicator size="large" color={PRIMARY} />
+    </View>
+  );
 
-  const selectedCourse = courses.find((c) => c.id === selectedCourseId);
-
-  // ─── RENDER ────────────────────────────────────────────────────────────────
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
-      {/* ══ EN-TÊTE ══ */}
-      <View style={styles.header}>
-        {selectedChapter ? (
-          // Header vue détail : bouton retour
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 32 }} />
-        )}
-        <Text style={styles.headerTitle}>Cours</Text>
-        <TouchableOpacity
-          onPress={() => setSearchVisible((v) => !v)}
-          style={styles.searchBtn}
-        >
-          <Ionicons
-            name={searchVisible ? 'close' : 'search'}
-            size={22}
-            color={COLORS.textPrimary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Barre de recherche */}
-      {searchVisible && (
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Rechercher un chapitre…"
-            placeholderTextColor={COLORS.textMuted}
-            autoFocus
-          />
+  // ─── VUE HOME ──────────────────────────────────────────────────────────────
+  if (screen === 'home') return (
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadHome(); }} tintColor={PRIMARY} />}
+      >
+        {/* Header SAT style */}
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <Text style={s.headerEyebrow}>MES ÉTUDES</Text>
+            <Text style={s.headerTitle}>Cours</Text>
+            <Text style={s.headerSub}>Apprends à ton rythme, un chapitre à la fois 📚</Text>
+          </View>
+          <View style={s.illustrationWrap}>
+            <View style={s.bubble1} /><View style={s.bubble2} /><View style={s.bubble3} />
+            <Text style={s.capEmoji}>📖</Text>
+          </View>
         </View>
-      )}
 
-      {/* ══ ONGLETS MATIÈRES ══ */}
-      {!selectedChapter && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabsScroll}
-          contentContainerStyle={styles.tabsContent}
-        >
-          {loadingCourses ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginLeft: 20 }} />
-          ) : (
-            courses.map((course) => (
-              <TouchableOpacity
-                key={course.id}
-                style={[
-                  styles.tab,
-                  selectedCourseId === course.id && styles.tabActive,
-                ]}
-                onPress={() => setSelectedCourseId(course.id)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    selectedCourseId === course.id && styles.tabTextActive,
-                  ]}
-                >
-                  {course.titre ?? course.matiere}
-                </Text>
-              </TouchableOpacity>
-            ))
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+
+          {/* Carte continuer */}
+          {stats.lastChapter && (
+            <TouchableOpacity style={s.retestCard} activeOpacity={0.85}>
+              <View style={s.retestIcon}><Ionicons name="play-circle" size={20} color={PRIMARY} /></View>
+              <View style={s.retestBody}>
+                <Text style={s.retestTitle}>Continuer mes révisions</Text>
+                <Text style={s.retestDesc}>{stats.lastChapter.subjectTitre} · {stats.lastChapter.titre}</Text>
+                <ProgressBar
+                  value={stats.lastChapter.totalLessons > 0 ? Math.round((stats.lastChapter.completedLessons / stats.lastChapter.totalLessons) * 100) : 0}
+                  color={PRIMARY}
+                />
+              </View>
+              <View style={s.retestBtn}>
+                <Text style={s.retestBtnText}>Continuer</Text>
+                <Ionicons name="chevron-forward" size={14} color="#FFF" />
+              </View>
+            </TouchableOpacity>
           )}
-        </ScrollView>
-      )}
 
-      {/* ══ CONTENU PRINCIPAL ══ */}
-      {selectedChapter ? (
-        // ── VUE DÉTAIL D'UN CHAPITRE ──
-        loadingDetail ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+          {/* Progression matières (domainCard SAT) */}
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Ma progression</Text>
+            <Text style={s.sectionLink}>{stats.globalPercent}% global</Text>
           </View>
-        ) : chapterDetail ? (
-          <ChapterView
-            chapter={selectedChapter}
-            detail={chapterDetail}
-            onBack={handleBack}
-            onLessonPress={handleLessonPress}
-            onQuizPress={handleQuizPress}
-            onNoteSave={handleNoteSave}
-            courseTitre={selectedCourse?.titre ?? ''}
-          />
-        ) : null
-      ) : (
-        // ── VUE LISTE DES CHAPITRES ──
-        loadingChapters ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+          <View style={s.domainsRow}>
+            {subjects.slice(0, 3).map((subj, i) => {
+              const cfg = SUBJECT_COLORS[i % 5];
+              const pct = subj.progressPercent ?? 0;
+              return (
+                <TouchableOpacity key={subj.id} style={s.domainCard} onPress={() => handleSubjectPress(subj)} activeOpacity={0.8}>
+                  <View style={[s.domainIconCircle, { backgroundColor: cfg.color }]}>
+                    <Ionicons name={cfg.icon as any} size={20} color="#FFF" />
+                  </View>
+                  <Text style={[s.domainLabel, { color: cfg.color }]} numberOfLines={1}>{subjectLabel(subj)}</Text>
+                  <Text style={[s.domainPct, { color: cfg.color }]}>{pct}%</Text>
+                  <ProgressBar value={pct} color={cfg.color} />
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        ) : errorCourses ? (
-          <View style={styles.centered}>
-            <Ionicons name="cloud-offline-outline" size={44} color={COLORS.textMuted} />
-            <Text style={styles.errorText}>{errorCourses}</Text>
+
+          {/* Liste matières (unitCard SAT) */}
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Étudier par matière</Text>
+            <View style={s.unitCountBadge}><Text style={s.unitCountText}>{subjects.length} matière{subjects.length !== 1 ? 's' : ''}</Text></View>
           </View>
-        ) : filteredChapters.length === 0 ? (
-          <View style={styles.centered}>
-            <Text style={styles.emptyText}>Aucun chapitre disponible</Text>
+          <View style={s.unitsList}>
+            {subjects.map((subj, i) => {
+              const cfg = SUBJECT_COLORS[i % 5];
+              const numLabel = String(i + 1).padStart(2, '0');
+              return (
+                <TouchableOpacity key={subj.id} style={s.unitCard} onPress={() => handleSubjectPress(subj)} activeOpacity={0.78}>
+                  <View style={[s.unitNum, { backgroundColor: cfg.bg }]}>
+                    <Text style={[s.unitNumText, { color: cfg.color }]}>{numLabel}</Text>
+                  </View>
+                  <View style={s.unitBody}>
+                    <Text style={s.unitTitle}>{subjectLabel(subj)}</Text>
+                    <Text style={s.unitDesc}>{(subj as any).totalChapters ? `${(subj as any).totalChapters} chapitres` : 'Voir les chapitres'}</Text>
+                    <ProgressBar value={subj.progressPercent ?? 0} color={cfg.color} />
+                  </View>
+                  <View style={s.unitArrow}><Ionicons name="chevron-forward" size={16} color={TEXT_MUTED} /></View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+        </Animated.View>
+        <View style={{ height: 32 }} />
+      </ScrollView>
+    </View>
+  );
+
+  // ─── VUE CHAPITRES ────────────────────────────────────────────────────────
+  if (screen === 'chapters' && selectedSubject) {
+    const done  = chapters.filter(c => c.status === 'completed').length;
+    const total = chapters.length;
+    const subjectPct = chapters.length > 0
+      ? Math.round(chapters.reduce((acc, ch) => acc + ch.progressPercent, 0) / chapters.length) : 0;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: BG }}>
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <TouchableOpacity onPress={handleBack} style={{ marginBottom: 8 }}>
+              <Ionicons name="arrow-back" size={22} color={TEXT} />
+            </TouchableOpacity>
+            <Text style={s.headerEyebrow}>MATIÈRE</Text>
+            <Text style={[s.headerTitle, { fontSize: 26 }]}>{subjectLabel(selectedSubject)}</Text>
+            <Text style={s.headerSub}>{total} chapitre{total !== 1 ? 's' : ''}</Text>
+          </View>
+          <View style={s.illustrationWrap}>
+            <View style={s.bubble1} /><View style={s.bubble2} />
+            <Text style={s.capEmoji}>📚</Text>
+          </View>
+        </View>
+
+        {loadingChapters ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={PRIMARY} />
           </View>
         ) : (
-          <ScrollView
-            style={styles.chaptersScroll}
-            contentContainerStyle={styles.chaptersContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {filteredChapters.map((chapter) => (
-              <TouchableOpacity
-                key={chapter.id}
-                style={styles.chapterCard}
-                onPress={() => handleChapterPress(chapter)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.chapterCardLeft}>
-                  <View style={styles.chapterNumBadge}>
-                    <Text style={styles.chapterNumText}>{chapter.numero}</Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+            {/* Carte progression */}
+            <View style={s.retestCard}>
+              <View style={s.retestIcon}><Ionicons name="stats-chart" size={20} color={PRIMARY} /></View>
+              <View style={s.retestBody}>
+                <Text style={s.retestTitle}>Progression en {subjectLabel(selectedSubject)}</Text>
+                <Text style={s.retestDesc}>{done}/{total} chapitres terminés</Text>
+                <ProgressBar value={subjectPct} color={PRIMARY} />
+              </View>
+              <View style={[s.retestBtn, { paddingHorizontal: 14, paddingVertical: 10 }]}>
+                <Text style={[s.retestBtnText, { fontSize: 16, fontWeight: '900' }]}>{subjectPct}%</Text>
+              </View>
+            </View>
+
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Chapitres</Text>
+              <View style={s.unitCountBadge}><Text style={s.unitCountText}>{total} chapitre{total !== 1 ? 's' : ''}</Text></View>
+            </View>
+
+            {chapters.length === 0 ? (
+              <View style={s.emptyBox}>
+                <Text style={s.emptyEmoji}>📭</Text>
+                <Text style={s.emptyTitle}>Pas encore de chapitres</Text>
+              </View>
+            ) : (
+              <View style={s.unitsList}>
+                {chapters.map((ch, i) => {
+                  const isDone = ch.status === 'completed';
+                  const numLabel = String(i + 1).padStart(2, '0');
+                  return (
+                    <TouchableOpacity key={ch.id} style={[s.unitCard, isDone && s.unitCardDone]} onPress={() => handleChapterPress(ch)} activeOpacity={0.78}>
+                      <View style={[s.unitNum, { backgroundColor: isDone ? SUCCESS_LIGHT : PRIMARY_LIGHT }]}>
+                        {isDone ? <Ionicons name="checkmark" size={18} color={SUCCESS} /> : <Text style={[s.unitNumText, { color: PRIMARY }]}>{numLabel}</Text>}
+                      </View>
+                      <View style={s.unitBody}>
+                        <Text style={s.unitTitle}>{ch.titre}</Text>
+                        <Text style={s.unitDesc}>{ch.completedLessons}/{ch.totalLessons} leçon{ch.totalLessons !== 1 ? 's' : ''} complétée{ch.totalLessons !== 1 ? 's' : ''}</Text>
+                        <ProgressBar value={ch.progressPercent} color={isDone ? SUCCESS : PRIMARY} />
+                      </View>
+                      <View style={[s.unitArrow, isDone && { backgroundColor: SUCCESS_LIGHT }]}>
+                        <Ionicons name={isDone ? 'checkmark' : 'chevron-forward'} size={16} color={isDone ? SUCCESS : TEXT_MUTED} />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
+
+  // ─── VUE DÉTAIL CHAPITRE ─────────────────────────────────────────────────
+  if (screen === 'detail' && selectedChapter) {
+    if (loadingDetail) return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG }}>
+        <ActivityIndicator size="large" color={PRIMARY} />
+      </View>
+    );
+    if (!chapterDetail) return null;
+
+    const pct = chapterDetail.progressPercent;
+    const done = chapterDetail.lessons.filter(l => l.status === 'completed').length;
+    const total = chapterDetail.lessons.length;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: BG }}>
+        {/* Header */}
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <TouchableOpacity onPress={handleBack} style={{ marginBottom: 8 }}>
+              <Ionicons name="arrow-back" size={22} color={TEXT} />
+            </TouchableOpacity>
+            <Text style={s.headerEyebrow}>{selectedSubject ? subjectLabel(selectedSubject).toUpperCase() : ''}</Text>
+            <Text style={[s.headerTitle, { fontSize: 22 }]} numberOfLines={2}>{selectedChapter.titre}</Text>
+          </View>
+          <View style={{ alignItems: 'center', justifyContent: 'flex-start', paddingTop: Platform.OS === 'ios' ? 56 : 40, paddingRight: 16 }}>
+            <View style={[s.pctCircle, { borderColor: pct === 100 ? SUCCESS : PRIMARY }]}>
+              <Text style={[s.pctCircleText, { color: pct === 100 ? SUCCESS : PRIMARY }]}>{pct}%</Text>
+            </View>
+            <Text style={s.pctCircleLabel}>{done}/{total} leçons</Text>
+          </View>
+        </View>
+        <View style={{ paddingHorizontal: 20, paddingVertical: 10, backgroundColor: CARD, borderBottomWidth: 1, borderBottomColor: BORDER }}>
+          <ProgressBar value={pct} color={pct === 100 ? SUCCESS : PRIMARY} />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+
+          {/* Leçons */}
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Leçons</Text>
+            <View style={s.unitCountBadge}><Text style={s.unitCountText}>{total} leçon{total !== 1 ? 's' : ''}</Text></View>
+          </View>
+          <View style={s.unitsList}>
+            {chapterDetail.lessons.map((lesson, i) => {
+              const isDone   = lesson.status === 'completed';
+              const isInprog = lesson.status === 'in_progress';
+              const isLocked = lesson.status === 'locked';
+              const typeKey  = lesson.type?.toLowerCase() ?? 'text';
+              const cfg      = LESSON_TYPE_CONFIG[typeKey] ?? LESSON_TYPE_CONFIG.text;
+              const isLast   = i === chapterDetail.lessons.length - 1;
+              const showReq  = isDone && isLast && ((chapterDetail.quiz && !chapterDetail.quizPassed) || (chapterDetail.exercisesExist && !chapterDetail.exercisesPassed));
+              return (
+                <TouchableOpacity
+                  key={lesson.id}
+                  style={[s.unitCard, isDone && s.unitCardDone, isLocked && { opacity: 0.5 }]}
+                  onPress={() => !isLocked && handleLessonPress(lesson)}
+                  activeOpacity={isLocked ? 1 : 0.78}
+                >
+                  <View style={[s.unitNum, { backgroundColor: isLocked ? BORDER : isDone ? SUCCESS_LIGHT : cfg.color + '18' }]}>
+                    {isLocked ? <Ionicons name="lock-closed" size={16} color={TEXT_MUTED} />
+                      : isDone ? <Ionicons name="checkmark" size={18} color={SUCCESS} />
+                      : <Ionicons name={cfg.icon as any} size={18} color={cfg.color} />}
                   </View>
-                  <View style={styles.chapterCardInfo}>
-                    <Text style={styles.chapterCardSub}>Chapitre {chapter.numero}</Text>
-                    <Text style={styles.chapterCardTitle}>
-                      {chapter.titre.toUpperCase()}
+                  <View style={s.unitBody}>
+                    <Text style={[s.unitTitle, isLocked && { color: TEXT_MUTED }]} numberOfLines={1}>{lesson.titre}</Text>
+                    <Text style={s.unitDesc}>
+                      {isLocked ? 'Termine la leçon précédente pour débloquer'
+                        : `${cfg.label}${lesson.duree ? ` · ${lesson.duree} min` : ''}${lesson.isFree ? ' · Gratuit' : ''}`}
                     </Text>
-                    {chapter.description ? (
-                      <Text style={styles.chapterCardDesc} numberOfLines={1}>
-                        {chapter.description}
-                      </Text>
-                    ) : null}
-                    {/* Mini barre de progression */}
-                    {(chapter.progression ?? 0) > 0 && (
-                      <View style={styles.chapterMiniProgressBg}>
-                        <View
-                          style={[
-                            styles.chapterMiniProgressFill,
-                            {
-                              width: `${chapter.progression}%` as DimensionValue,
-                            },
-                          ]}
-                        />
+                    {isInprog && <ProgressBar value={50} color={cfg.color} />}
+                    {showReq && (
+                      <View style={{ marginTop: 8, backgroundColor: '#FEF2F2', borderRadius: 8, padding: 8 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginBottom: 3 }}>Pour continuer :</Text>
+                        {chapterDetail.quiz && !chapterDetail.quizPassed && (
+                          <Text style={{ fontSize: 11, color: '#EF4444' }}>⛔ Quiz du chapitre non réussi</Text>
+                        )}
+                        {chapterDetail.exercisesExist && !chapterDetail.exercisesPassed && (
+                          <Text style={{ fontSize: 11, color: '#EF4444' }}>⛔ Exercices non complétés</Text>
+                        )}
                       </View>
                     )}
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            ))}
-            <View style={{ height: 24 }} />
-          </ScrollView>
-        )
-      )}
-    </SafeAreaView>
-  );
+                  <View style={[s.unitArrow, isDone && { backgroundColor: SUCCESS_LIGHT }, isLocked && { backgroundColor: '#F3F4F6' }]}>
+                    <Ionicons name={isLocked ? 'lock-closed' : isDone ? 'checkmark' : isInprog ? 'play' : 'chevron-forward'}
+                      size={16} color={isLocked ? TEXT_MUTED : isDone ? SUCCESS : isInprog ? PRIMARY : TEXT_MUTED} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* S'entraîner */}
+          <Text style={[s.sectionTitle, { marginTop: 28, marginBottom: 14, marginHorizontal: 16 }]}>S'entraîner</Text>
+          <View style={s.quickGrid}>
+            <TouchableOpacity
+              style={[s.quickCard, !chapterDetail.quiz && { opacity: 0.5 }]}
+              onPress={() => {
+                if (chapterDetail.quiz) handleQuizPress(chapterDetail.quiz);
+                else Alert.alert('Quiz non disponible', 'Aucun quiz pour ce chapitre pour le moment.');
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[s.quickIconWrap, { backgroundColor: PRIMARY + '15' }]}><Text style={{ fontSize: 26 }}>🎯</Text></View>
+              <Text style={s.quickLabel}>Quiz</Text>
+              <Text style={s.quickSub}>{chapterDetail.quiz ? `${chapterDetail.quiz.nombreQuestions ?? '?'} questions` : 'Bientôt dispo'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.quickCard}
+              onPress={() => navigation.navigate('StudentCourseExercise', { chapterId: selectedChapter.id, chapterTitre: selectedChapter.titre })}
+              activeOpacity={0.8}
+            >
+              <View style={[s.quickIconWrap, { backgroundColor: '#7C3AED15' }]}><Text style={{ fontSize: 26 }}>📋</Text></View>
+              <Text style={s.quickLabel}>Exercices</Text>
+              <Text style={s.quickSub}>S'entraîner</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.quickCard}
+              onPress={() => navigation.navigate('StudentCourseQuiz', {
+                quizId: `exam_${selectedChapter.id}`,
+                quizTitre: `Examen — ${selectedChapter.titre}`,
+                chapterId: selectedChapter.id, chapterTitre: selectedChapter.titre, isExam: true,
+              })}
+              activeOpacity={0.8}
+            >
+              <View style={[s.quickIconWrap, { backgroundColor: GOLD + '15' }]}><Text style={{ fontSize: 26 }}>📊</Text></View>
+              <Text style={s.quickLabel}>Examen</Text>
+              <Text style={s.quickSub}>Test complet</Text>
+            </TouchableOpacity>
+          </View>
+
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return null;
 }
 
-// ─── STYLES ────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-
-  // ── Header ──
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: COLORS.white,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.3,
-  },
-  backBtn: {
-    width: 32,
-    alignItems: 'flex-start',
-  },
-  searchBtn: {
-    width: 32,
-    alignItems: 'flex-end',
-  },
-
-  // ── Barre de recherche ──
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-  },
-
-  // ── Onglets matières ──
-  tabsScroll: {
-    flexGrow: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  tabsContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  tab: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 22,
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    marginRight: 8,
-  },
-  tabActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  tabTextActive: {
-    color: COLORS.white,
-  },
-
-  // ── Liste chapitres ──
-  chaptersScroll: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  chaptersContent: {
-    padding: 16,
-    gap: 12,
-  },
-  chapterCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 12,
-  },
-  chapterCardLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  chapterNumBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chapterNumText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  chapterCardInfo: {
-    flex: 1,
-  },
-  chapterCardSub: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginBottom: 2,
-  },
-  chapterCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    letterSpacing: 0.2,
-  },
-  chapterCardDesc: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  chapterMiniProgressBg: {
-    height: 4,
-    backgroundColor: COLORS.progressBg,
-    borderRadius: 4,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  chapterMiniProgressFill: {
-    height: 4,
-    backgroundColor: COLORS.primary,
-    borderRadius: 4,
-  },
-
-  // ── Vue détail chapitre ──
-  chapterScroll: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  chapterScrollContent: {
-    paddingBottom: 20,
-  },
-
-  // Bannière verte
-  chapterBanner: {
-    backgroundColor: COLORS.primaryDark,
-    paddingTop: 24,
-    paddingLeft: 20,
-    paddingRight: 16,
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    position: 'relative',
-  },
-  chapterBannerLeft: {
-    flex: 1,
-  },
-  chapterBannerSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
-    marginBottom: 4,
-  },
-  chapterBannerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: COLORS.white,
-    letterSpacing: 0.5,
-    marginBottom: 14,
-  },
-  chapterBannerLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 8,
-  },
-  chapterProgressBg: {
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 6,
-    overflow: 'hidden',
-    width: '80%',
-  },
-  chapterProgressFill: {
-    height: 8,
-    backgroundColor: COLORS.gold,
-    borderRadius: 6,
-  },
-  chapterBannerDeco: {
-    alignItems: 'flex-end',
-    gap: 4,
-    paddingBottom: 24,
-    opacity: 0.7,
-  },
-  chapterDecoText: {
-    fontSize: 13,
-    color: COLORS.white,
-    fontStyle: 'italic',
-    fontWeight: '500',
-  },
-  chapterProgressPct: {
-    position: 'absolute',
-    bottom: 20,
-    right: 16,
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.white,
-  },
-
-  // Leçons
-  lessonsCard: {
-    backgroundColor: COLORS.card,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-  },
-  lessonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 14,
-  },
-  lessonRowLocked: {
-    opacity: 0.55,
-  },
-  lessonIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lessonIconCompleted: {
-    backgroundColor: COLORS.primary,
-  },
-  lessonIconAvailable: {
-    backgroundColor: COLORS.border,
-  },
-  lessonIconLocked: {
-    backgroundColor: COLORS.border,
-  },
-  lessonText: {
-    flex: 1,
-  },
-  lessonTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 2,
-  },
-  lessonTitleLocked: {
-    color: COLORS.textMuted,
-  },
-  lessonSub: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  lessonRightIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lessonDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginHorizontal: 16,
-  },
-
-  // Quiz de fin de chapitre
-  quizRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.goldLight,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-    borderWidth: 1,
-    borderColor: '#F5E6B0',
-  },
-  quizIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quizText: {
-    flex: 1,
-  },
-  quizTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 2,
-  },
-  quizSub: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  quizXP: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.gold,
-  },
-
-  // Notes personnelles
-  notesCard: {
-    backgroundColor: COLORS.card,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 16,
-  },
-  notesHeader: {
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'flex-start',
-  },
-  notesIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notesTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-  },
-  notesInput: {
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    lineHeight: 20,
-    minHeight: 56,
-  },
-  notesSaveBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 22,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  notesSaveBtnText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Erreur / vide
-  errorText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-  },
+    backgroundColor: CARD, flexDirection: 'row', justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingHorizontal: 20, paddingBottom: 24, overflow: 'hidden',
+  },
+  headerLeft:    { flex: 1, zIndex: 2 },
+  headerEyebrow: { fontSize: 11, fontWeight: '800', color: PRIMARY, letterSpacing: 2, marginBottom: 4 },
+  headerTitle:   { fontSize: 34, fontWeight: '900', color: TEXT, letterSpacing: -1, marginBottom: 4 },
+  headerSub:     { fontSize: 13, color: TEXT_MUTED, fontWeight: '500', marginBottom: 12 },
+  illustrationWrap: { alignItems: 'center', justifyContent: 'flex-start', paddingTop: 8 },
+  capEmoji: { fontSize: 60, zIndex: 2 },
+  bubble1: { position: 'absolute', width: 12, height: 12, borderRadius: 6,  backgroundColor: PRIMARY_LIGHT, top: 4,   left: -16 },
+  bubble2: { position: 'absolute', width: 18, height: 18, borderRadius: 9,  backgroundColor: PRIMARY_LIGHT + '80', top: -2, right: 4 },
+  bubble3: { position: 'absolute', width: 8,  height: 8,  borderRadius: 4,  backgroundColor: '#3B82F620', bottom: 8, left: -6 },
+  retestCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: CARD,
+    borderRadius: 18, padding: 16, marginHorizontal: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: BORDER, gap: 12,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  retestIcon:    { width: 42, height: 42, borderRadius: 12, backgroundColor: PRIMARY_LIGHT, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  retestBody:    { flex: 1 },
+  retestTitle:   { fontSize: 14, fontWeight: '800', color: TEXT, marginBottom: 3 },
+  retestDesc:    { fontSize: 11, color: TEXT_MUTED, lineHeight: 16 },
+  retestBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: PRIMARY, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  retestBtnText: { fontSize: 12, fontWeight: '800', color: '#FFF' },
+  sectionHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 12 },
+  sectionTitle:    { fontSize: 16, fontWeight: '800', color: TEXT },
+  sectionLink:     { fontSize: 13, fontWeight: '700', color: PRIMARY },
+  unitCountBadge:  { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, backgroundColor: PRIMARY_LIGHT },
+  unitCountText:   { fontSize: 12, fontWeight: '800', color: PRIMARY },
+  domainsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 24 },
+  domainCard: {
+    flex: 1, backgroundColor: CARD, borderRadius: 18, padding: 12,
+    alignItems: 'center', gap: 3, borderWidth: 1.5, borderColor: BORDER,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  domainIconCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  domainLabel:      { fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  domainPct:        { fontSize: 18, fontWeight: '900', marginTop: 2 },
+  unitsList: { paddingHorizontal: 16, gap: 10, marginBottom: 8 },
+  unitCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: CARD,
+    borderRadius: 18, padding: 16, gap: 14,
+    borderWidth: 1, borderColor: BORDER,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  unitCardDone:    { borderColor: '#BBF7D0' },
+  unitNum:         { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  unitNumText:     { fontSize: 16, fontWeight: '900' },
+  unitBody:        { flex: 1 },
+  unitTitle:       { fontSize: 14, fontWeight: '800', color: TEXT, marginBottom: 3 },
+  unitDesc:        { fontSize: 12, color: TEXT_MUTED, lineHeight: 17, marginBottom: 4 },
+  unitArrow:       { width: 30, height: 30, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  pctCircle:       { width: 64, height: 64, borderRadius: 32, borderWidth: 3, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center' },
+  pctCircleText:   { fontSize: 16, fontWeight: '900' },
+  pctCircleLabel:  { fontSize: 10, color: TEXT_MUTED, fontWeight: '600', marginTop: 4, textAlign: 'center' },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 10, marginBottom: 8 },
+  quickCard: {
+    flex: 1, backgroundColor: CARD, borderRadius: 18, padding: 14,
+    alignItems: 'center', gap: 4, borderWidth: 1, borderColor: BORDER,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  quickIconWrap: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  quickLabel:    { fontSize: 12, fontWeight: '800', color: TEXT, textAlign: 'center' },
+  quickSub:      { fontSize: 10, color: TEXT_MUTED, fontWeight: '500', textAlign: 'center' },
+  emptyBox:  { alignItems: 'center', paddingVertical: 36, gap: 8 },
+  emptyEmoji:{ fontSize: 40 },
+  emptyTitle:{ fontSize: 15, fontWeight: '800', color: TEXT },
 });

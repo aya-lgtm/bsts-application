@@ -7,7 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "BSTS a besoin de la caméra pour les réunions avec les anciens étudiants.",
+        "NSMicrophoneUsageDescription": "BSTS a besoin du micro pour les réunions avec les anciens étudiants."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,13 +21,13 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "bsts.app"
+      "package": "bsts.app",
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-audio", { "microphonePermission": "Autoriser l'accès au micro" }],
       "expo-secure-store",
       "expo-splash-screen",
       "expo-font",
@@ -34,7 +38,7 @@
         }
       ],
       "expo-video",
-      "expo-audio"
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
