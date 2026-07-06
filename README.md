@@ -26,6 +26,42 @@ Video/PDF upload and progress tracking
 Lesson bookmarking
 Chapter quizzes with scoring
 
+le fichier .env 
+PORT=3000
+NODE_ENV=development
+
+DB_HOST=
+DB_PORT=5432
+DB_NAME=
+DB_USER=
+DB_PASSWORD=
+DB_SSL=true
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+JWT_SECRET=
+JWT_REFRESH_SECRET=
+
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+FRONTEND_URL=http://localhost:3000
+
+SENTRY_DSN=
+
+FIREBASE_PRIVATE_KEY=
+
+REDIS_URL=
+
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+CLOUDINARY_CLOUD_NAME=
+
+DAILY_API_KEY=
+DAILY_DOMAIN=
+
+GMAIL_USER=
+GMAIL_APP_PASSWORD=
 SAT Preparation
 
 Question bank with domains and difficulty levels
